@@ -1,0 +1,352 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+    color: #18202f;
+    background: #f4f7fb;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+}
+
+@layer components {
+  .card,
+  .panel,
+  .case-header {
+    @apply rounded-md border border-line bg-white p-5;
+  }
+
+  .eyebrow {
+    @apply text-xs font-semibold uppercase tracking-wide text-accent;
+  }
+
+  .section-heading {
+    @apply mb-5 flex flex-col gap-4 md:flex-row md:items-end md:justify-between;
+  }
+
+  .section-heading h2,
+  .case-header h2 {
+    @apply text-2xl font-semibold;
+  }
+
+  .panel-title {
+    @apply mb-4 flex items-center justify-between gap-3;
+  }
+
+  .panel-title h3 {
+    @apply font-semibold;
+  }
+
+  .panel-title span {
+    @apply rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600;
+  }
+
+  .nav-link,
+  .button-primary,
+  .button-secondary,
+  .back-link {
+    @apply inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition;
+  }
+
+  .nav-link {
+    @apply text-slate-600 hover:bg-slate-100 hover:text-ink;
+  }
+
+  .button-primary {
+    @apply bg-accent text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300;
+  }
+
+  .button-secondary {
+    @apply border border-line bg-white text-ink hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:text-slate-400;
+  }
+
+  .button-secondary.small,
+  .button-primary.small {
+    @apply h-8 px-3 text-xs;
+  }
+
+  .back-link {
+    @apply px-0 text-accent hover:text-blue-800;
+  }
+
+  .icon-button {
+    @apply grid h-10 w-10 place-items-center rounded-md border border-line bg-white text-slate-600 transition hover:border-accent hover:text-accent;
+  }
+
+  .input {
+    @apply w-full rounded-md border border-line bg-white px-3 py-2 text-sm outline-none transition placeholder:text-slate-400 focus:border-accent focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-slate-500;
+  }
+
+  .field {
+    @apply block space-y-1.5 text-sm font-medium text-slate-700;
+  }
+
+  .field > span {
+    @apply block;
+  }
+
+  .form-error {
+    @apply mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800;
+  }
+
+  .notice {
+    @apply rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-900;
+  }
+
+  .toolbar {
+    @apply mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between;
+  }
+
+  .search-box {
+    @apply flex h-11 flex-1 items-center gap-2 rounded-md border border-line bg-white px-3 text-slate-500;
+  }
+
+  .search-box input {
+    @apply w-full border-0 bg-transparent text-sm text-ink outline-none;
+  }
+
+  .metric {
+    @apply rounded-md border border-line bg-white p-5;
+  }
+
+  .metric-icon {
+    @apply mb-5 grid h-10 w-10 place-items-center rounded-md bg-blue-50 text-accent;
+  }
+
+  .metric p {
+    @apply text-sm text-slate-500;
+  }
+
+  .metric strong {
+    @apply mt-1 block text-3xl font-semibold;
+  }
+
+  .manual-callout {
+    @apply mt-5 flex items-center gap-4 rounded-md border border-blue-200 bg-blue-50 p-4 text-blue-950 transition hover:border-accent hover:bg-blue-100;
+  }
+
+  .manual-callout p {
+    @apply mt-1 text-sm text-blue-900;
+  }
+
+  .manual-callout > svg:last-child {
+    @apply ml-auto shrink-0;
+  }
+
+  .alert-row {
+    @apply flex items-center justify-between gap-4 rounded-md border border-line bg-white p-4 transition hover:border-accent hover:bg-blue-50/30;
+  }
+
+  .status-pill {
+    @apply inline-flex min-h-7 items-center rounded-full px-3 py-1 text-xs font-semibold;
+  }
+
+  .status-pill.ok {
+    @apply bg-emerald-50 text-emerald-700;
+  }
+
+  .status-pill.warn {
+    @apply bg-amber-50 text-amber-800;
+  }
+
+  .status-pill.danger {
+    @apply bg-red-50 text-red-700;
+  }
+
+  .status-pill.missing {
+    @apply bg-slate-100 text-slate-700;
+  }
+
+  .data-table {
+    @apply w-full border-collapse text-sm;
+  }
+
+  .data-table th {
+    @apply border-b border-line bg-slate-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500;
+  }
+
+  .data-table td {
+    @apply border-b border-line px-4 py-3 align-middle;
+  }
+
+  .empty-state {
+    @apply rounded-md border border-dashed border-line bg-white p-8 text-center text-sm text-slate-500;
+  }
+
+  .case-header {
+    @apply mt-4 grid gap-5 lg:grid-cols-[1fr_360px];
+  }
+
+  .case-actions {
+    @apply flex flex-col items-stretch gap-3;
+  }
+
+  .revert-box {
+    @apply rounded-md border border-line bg-slate-50 p-3;
+  }
+
+  .tabs {
+    @apply my-5 flex flex-wrap gap-2;
+  }
+
+  .tab {
+    @apply inline-flex h-10 items-center gap-2 rounded-md border border-line bg-white px-4 text-sm font-semibold text-slate-600 transition hover:border-accent hover:text-accent;
+  }
+
+  .tab.active {
+    @apply border-accent bg-blue-50 text-accent;
+  }
+
+  .upload-box {
+    @apply flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed border-accent bg-blue-50 p-8 text-center font-semibold text-accent;
+  }
+
+  .upload-box input {
+    @apply hidden;
+  }
+
+  .upload-draft,
+  .doc-row {
+    @apply flex items-center gap-3 rounded-md border border-line bg-white p-3;
+  }
+
+  .checklist-grid {
+    @apply grid gap-2 md:grid-cols-2;
+  }
+
+  .check-item {
+    @apply flex min-h-14 items-center gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900;
+  }
+
+  .check-item.done {
+    @apply border-emerald-200 bg-emerald-50 text-emerald-800;
+  }
+
+  .check-item span {
+    @apply block text-xs opacity-75;
+  }
+
+  .readonly-banner {
+    @apply mb-4 flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700;
+  }
+
+  .analysis-card {
+    @apply mb-5 rounded-md border border-blue-200 bg-blue-50 p-4 text-blue-950;
+  }
+
+  .analysis-card p {
+    @apply mt-1 text-sm;
+  }
+
+  .checkbox-field {
+    @apply flex h-full min-h-20 items-center gap-3 rounded-md border border-line bg-white px-4 text-sm font-semibold;
+  }
+
+  .checkbox-field input {
+    @apply h-4 w-4;
+  }
+
+  .method-card {
+    @apply flex min-h-40 flex-col items-start justify-between rounded-md border border-line bg-white p-4 text-left transition hover:border-accent disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .method-card.selected {
+    @apply border-accent bg-blue-50 ring-2 ring-blue-100;
+  }
+
+  .method-card span {
+    @apply text-sm font-semibold text-slate-600;
+  }
+
+  .method-card strong {
+    @apply text-2xl font-semibold;
+  }
+
+  .method-card small {
+    @apply text-xs text-slate-500;
+  }
+
+  .final-claim {
+    @apply mt-5 flex flex-col gap-1 rounded-md border border-ink bg-ink p-5 text-white md:flex-row md:items-center md:justify-between;
+  }
+
+  .final-claim span {
+    @apply text-sm text-slate-200;
+  }
+
+  .final-claim strong {
+    @apply text-2xl;
+  }
+
+  .timeline {
+    @apply space-y-0;
+  }
+
+  .timeline-event {
+    @apply relative grid grid-cols-[24px_1fr] gap-3 border-l border-line pb-5 pl-4;
+  }
+
+  .timeline-event:last-child {
+    @apply border-l-transparent pb-0;
+  }
+
+  .timeline-dot {
+    @apply absolute -left-2 top-1 h-4 w-4 rounded-full border-2 border-white bg-accent;
+  }
+
+  .modal-backdrop {
+    @apply fixed inset-0 z-50 grid place-items-center bg-ink/40 px-5;
+  }
+
+  .modal {
+    @apply w-full max-w-lg rounded-md bg-white p-5 shadow-xl;
+  }
+
+  .manual-steps {
+    @apply list-decimal space-y-2 pl-5 text-sm text-slate-700;
+  }
+
+  .manual-role {
+    @apply rounded-md border border-line bg-slate-50 p-3;
+  }
+
+  .manual-role p {
+    @apply mt-1 text-sm text-slate-600;
+  }
+
+  .manual-list {
+    @apply list-disc space-y-2 pl-5 text-sm text-slate-700;
+  }
+
+  .manual-grid {
+    @apply grid gap-3 md:grid-cols-2;
+  }
+
+  .manual-card {
+    @apply rounded-md border border-line bg-white p-4;
+  }
+
+  .manual-card h4 {
+    @apply font-semibold text-ink;
+  }
+
+  .manual-card p {
+    @apply mt-2 text-sm leading-6 text-slate-600;
+  }
+}
