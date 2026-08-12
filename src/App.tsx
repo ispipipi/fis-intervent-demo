@@ -1,5 +1,5 @@
 import { ChangeEvent, FormEvent, useMemo, useState } from "react";
-import { Link, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -75,60 +75,71 @@ function shellTitle(role: string) {
 
 function AppShell({ children }: { children: React.ReactNode }) {
   const { usuario, setUsuario, resetDemo } = useDemoStore();
+  const navigate = useNavigate();
   return (
-    <div className="min-h-screen bg-slatewash text-ink">
-      <header className="sticky top-0 z-20 border-b border-line bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-3">
-          <Link to="/dashboard" className="flex items-center gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-md bg-ink text-white">
-              <ShieldCheck size={21} />
+    <div className="app-shell min-h-screen text-ink">
+      <header className="app-header sticky top-0 z-20">
+        <div className="app-header-inner mx-auto max-w-7xl px-5">
+          <Link to="/dashboard" className="brand-lockup">
+            <div className="brand-mark">
+              <span>IP</span>
             </div>
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-wide text-accent">Intervent Preclaim</p>
-              <h1 className="text-lg font-semibold">{shellTitle(usuario.role)}</h1>
+            <div className="brand-copy">
+              <p>Intervent <span>Preclaim</span></p>
+              <h1>{shellTitle(usuario.role)}</h1>
             </div>
           </Link>
-          <nav className="hidden items-center gap-2 md:flex">
+          <nav className="app-nav hidden items-center gap-1 md:flex">
             <NavLink to="/dashboard" icon={<LayoutDashboard size={18} />} label="Dashboard" />
             <NavLink to="/casos" icon={<ClipboardList size={18} />} label="Casos" />
             {usuario.role === "Handler" && <NavLink to="/casos/nuevo" icon={<Plus size={18} />} label="Nuevo caso" />}
+            {usuario.role !== "Handler" && <NavLink to="/benchmark" icon={<BarChart3 size={18} />} label="Benchmark" />}
             <NavLink to="/manual" icon={<HelpCircle size={18} />} label="Manual" />
           </nav>
-          <div className="flex items-center gap-2">
-            <Link className="button-secondary" to="/manual" title="Abrir manual de usuario">
-              <HelpCircle size={17} /> Manual
-            </Link>
-            <select
-              className="input h-10 w-44"
-              value={`${usuario.role}|${usuario.nombre}`}
-              onChange={(event) => {
-                const [role, nombre] = event.target.value.split("|");
-                setUsuario({ role: role as typeof usuario.role, nombre });
-              }}
-              aria-label="Selector de rol"
-            >
-              {HANDLERS.map((handler) => (
-                <option key={handler} value={`Handler|${handler}`}>
-                  Handler · {handler}
-                </option>
-              ))}
-              <option value="Gerente|Ljubinka Basic">Gerente · Ljubinka</option>
-              <option value="CEO|Dirección NPR">CEO · Dirección</option>
-            </select>
-            <button className="icon-button" title="Reiniciar datos demo" onClick={resetDemo}>
-              <RefreshCcw size={18} />
-            </button>
+          <div className="header-tools">
+            <div className="session-controls">
+              <span className="role-indicator">{usuario.role}</span>
+              <select
+                className="role-select"
+                value={`${usuario.role}|${usuario.nombre}`}
+                onChange={(event) => {
+                  const [role, nombre] = event.target.value.split("|");
+                  setUsuario({ role: role as typeof usuario.role, nombre });
+                  navigate("/dashboard");
+                }}
+                aria-label="Selector de rol"
+              >
+                {HANDLERS.map((handler) => (
+                  <option key={handler} value={`Handler|${handler}`}>
+                    Handler · {handler}
+                  </option>
+                ))}
+                <option value="Gerente|Ljubinka Basic">Gerente · Ljubinka</option>
+                <option value="CEO|Dirección NPR">CEO · Dirección</option>
+              </select>
+              <button className="icon-button" title="Reiniciar datos demo" onClick={resetDemo}>
+                <RefreshCcw size={18} />
+              </button>
+            </div>
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-7xl px-5 py-6">{children}</main>
+      <main className="app-main mx-auto max-w-7xl px-5 py-7">{children}</main>
+      <footer className="app-footer">
+        <div className="app-footer-inner">
+          <span>Prototipo funcional sobre el MVP · datos simulados persistidos localmente</span>
+          <Link to="/manual">Manual de usuario</Link>
+        </div>
+      </footer>
     </div>
   );
 }
 
 function NavLink({ to, icon, label }: { to: string; icon: React.ReactNode; label: string }) {
+  const location = useLocation();
+  const active = location.pathname === to || (to !== "/dashboard" && location.pathname.startsWith(`${to}/`));
   return (
-    <Link to={to} className="nav-link">
+    <Link to={to} className={cx("nav-link", active && "active")}>
       {icon}
       {label}
     </Link>
@@ -144,35 +155,69 @@ function RoleSelectorPage() {
     { role: "CEO" as const, nombre: "Dirección NPR", title: "CEO", copy: "Revisa riesgos críticos y estado ejecutivo del portafolio." }
   ];
   return (
-    <div className="grid min-h-screen place-items-center bg-slatewash px-5">
-      <section className="w-full max-w-5xl">
-        <div className="mb-8">
-          <p className="eyebrow">Demo funcional completo</p>
-          <h1 className="mt-2 text-4xl font-semibold text-ink">Plataforma Intervent Preclaim</h1>
-          <p className="mt-3 max-w-2xl text-base text-slate-600">
-            Selecciona un rol simulado para recorrer el flujo: crear caso, clasificar documentos, calcular pérdida, gestionar prescripción y generar cartas.
-          </p>
-        </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          {roles.map((item) => (
-            <button
-              key={item.role}
-              className="card text-left transition hover:-translate-y-0.5 hover:border-accent"
-              onClick={() => {
-                setUsuario({ role: item.role, nombre: item.nombre });
-                navigate("/dashboard");
-              }}
-            >
-              <UserRound className="mb-5 text-accent" size={30} />
-              <h2 className="text-xl font-semibold">{item.title}</h2>
-              <p className="mt-2 min-h-14 text-sm text-slate-600">{item.copy}</p>
-              <span className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-accent">
-                Entrar <ChevronRight size={16} />
-              </span>
-            </button>
-          ))}
-        </div>
-      </section>
+    <div className="role-gate">
+      <main className="role-gate-shell">
+        <section className="role-gate-intro">
+          <div className="company-brand-card">
+            <img src="/logo.svg" alt="Logo de la empresa" />
+            <span>Intervent Preclaim</span>
+          </div>
+          <div className="role-gate-copy">
+            <p className="eyebrow">Entorno de demostración</p>
+            <h1>Decisiones claras antes del reclamo.</h1>
+            <p>
+              Un espacio único para ordenar antecedentes, anticipar riesgos y preparar cada caso antes de su traspaso a FIS.
+            </p>
+          </div>
+          <div className="role-gate-proof">
+            <span className="proof-dot" />
+            <div>
+              <strong>MVP funcional completo</strong>
+              <span>Datos simulados · flujo auditable</span>
+            </div>
+          </div>
+        </section>
+
+        <section className="role-gate-access">
+          <div className="access-heading">
+            <div>
+              <p className="eyebrow">Acceso de prueba</p>
+              <h2>Selecciona tu vista</h2>
+            </div>
+            <span className="access-count">03 perfiles</span>
+          </div>
+          <p className="access-description">Cada perfil muestra el mismo expediente con permisos y alcance distintos.</p>
+          <div className="role-options">
+            {roles.map((item, index) => (
+              <button
+                key={item.role}
+                className="role-option"
+                onClick={() => {
+                  setUsuario({ role: item.role, nombre: item.nombre });
+                  navigate("/dashboard");
+                }}
+              >
+                <span className="role-option-index">0{index + 1}</span>
+                <span className="role-option-icon"><UserRound size={18} /></span>
+                <span className="role-option-copy">
+                  <strong>{item.title}</strong>
+                  <span>{item.copy}</span>
+                </span>
+                <ChevronRight className="role-option-arrow" size={18} />
+              </button>
+            ))}
+          </div>
+          <Link to="/manual" className="role-gate-manual">
+            <HelpCircle size={16} />
+            <span>Revisar manual de usuario</span>
+            <ChevronRight size={15} />
+          </Link>
+          <div className="access-note">
+            <ShieldCheck size={15} />
+            <span>La navegación no requiere credenciales y no utiliza datos reales.</span>
+          </div>
+        </section>
+      </main>
     </div>
   );
 }
@@ -199,42 +244,70 @@ function DashboardPage() {
   }));
   const staleCount = filtered.filter((caso) => daysWithoutMovement(caso) >= 14).length;
   const riskCount = alerts.length;
+  const coverage = filtered.length
+    ? Math.round(
+        filtered.reduce((sum, caso) => {
+          const completeness = documentCompleteness(documentos.filter((doc) => doc.casoId === caso.id));
+          return sum + (completeness.completed / completeness.total) * 100;
+        }, 0) / filtered.length
+      )
+    : 0;
 
   return (
     <AppShell>
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Dashboard</p>
-          <h2>Resumen de preclaims</h2>
+      <section className="dashboard-overview">
+        <div className="dashboard-welcome">
+          <p className="eyebrow">{shellTitle(usuario.role)}</p>
+          <h2>Hola, {usuario.nombre.split(" ")[0]}</h2>
+          <p>
+            {filtered.length} casos visibles · {riskCount} alertas activas · {coverage}% de cobertura documental promedio.
+          </p>
+          <div className="dashboard-actions">
+            {usuario.role === "Handler" ? (
+              <Link className="button-primary" to="/casos/nuevo">
+                <Plus size={16} /> Nuevo caso
+              </Link>
+            ) : (
+              <>
+                <Link className="button-primary" to="/benchmark">
+                  <BarChart3 size={16} /> Ver benchmark
+                </Link>
+                <select className="input" value={handlerFilter} onChange={(event) => setHandlerFilter(event.target.value)} aria-label="Filtrar por handler">
+                  <option>Todos</option>
+                  {HANDLERS.map((handler) => (
+                    <option key={handler}>{handler}</option>
+                  ))}
+                </select>
+              </>
+            )}
+          </div>
+          <Link to="/manual" className="welcome-manual">
+            <HelpCircle size={15} /> Abrir manual de usuario <ChevronRight size={14} />
+          </Link>
         </div>
-        {usuario.role !== "Handler" && (
-          <select className="input w-56" value={handlerFilter} onChange={(event) => setHandlerFilter(event.target.value)}>
-            <option>Todos</option>
-            {HANDLERS.map((handler) => (
-              <option key={handler}>{handler}</option>
-            ))}
-          </select>
-        )}
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-4">
-        <Metric title="Total casos" value={filtered.length} icon={<BarChart3 size={20} />} />
-        <Metric title="Alertas activas" value={riskCount} icon={<AlertTriangle size={20} />} tone="danger" />
-        <Metric title="Sin movimiento" value={staleCount} icon={<CalendarClock size={20} />} tone="warn" />
-        <Metric title="Documentos cargados" value={documentos.filter((doc) => filtered.some((caso) => caso.id === doc.casoId)).length} icon={<FileText size={20} />} />
-      </div>
-
-      <Link to="/manual" className="manual-callout">
-        <HelpCircle size={22} />
-        <div>
-          <strong>Manual de usuario</strong>
-          <p>Ver recorrido completo, permisos por rol, módulos y reglas críticas del demo.</p>
+        <div className="dashboard-metrics">
+          <Metric title="Total casos" value={filtered.length} icon={<BarChart3 size={20} />} />
+          <Metric title="Alertas activas" value={riskCount} icon={<AlertTriangle size={20} />} tone="danger" />
+          <Metric title="Sin movimiento" value={staleCount} icon={<CalendarClock size={20} />} tone="warn" />
+          <Metric title="Documentos cargados" value={documentos.filter((doc) => filtered.some((caso) => caso.id === doc.casoId)).length} icon={<FileText size={20} />} />
         </div>
-        <ChevronRight size={18} />
-      </Link>
+        <div className="coverage-card">
+          <div className="coverage-ring" aria-label={`Cobertura documental ${coverage}%`}>
+            <svg viewBox="0 0 42 42" role="img" aria-hidden="true">
+              <circle className="coverage-ring-track" cx="21" cy="21" r="15.9" pathLength="100" />
+              <circle className="coverage-ring-value" cx="21" cy="21" r="15.9" pathLength="100" strokeDasharray={`${coverage} 100`} />
+            </svg>
+            <strong>{coverage}%</strong>
+          </div>
+          <div>
+            <span className="coverage-label">Cobertura documental</span>
+            <p>Promedio real sobre los 17 documentos del checklist.</p>
+          </div>
+        </div>
+      </section>
 
-      <section className="mt-6 grid gap-5 lg:grid-cols-[1.4fr_1fr]">
-        <div className="panel">
+      <section className="dashboard-grid mt-6 grid gap-5 lg:grid-cols-[1.05fr_1.5fr]">
+        <div className="panel priority-panel">
           <div className="panel-title">
             <h3>Alertas de prescripción y movimiento</h3>
             <span>{alerts.length} activas</span>
@@ -258,8 +331,8 @@ function DashboardPage() {
             ))}
           </div>
         </div>
-        <div className="space-y-5">
-          <div className="panel">
+        <div className="dashboard-insights space-y-5">
+          <div className="panel distribution-panel">
             <div className="panel-title">
               <h3>Casos por estado</h3>
             </div>
@@ -269,7 +342,7 @@ function DashboardPage() {
               ))}
             </div>
           </div>
-          <div className="panel">
+          <div className="panel distribution-panel">
             <div className="panel-title">
               <h3>Distribución por handler</h3>
             </div>
@@ -277,6 +350,27 @@ function DashboardPage() {
               {byHandler.map((item) => (
                 <Distribution key={item.handler} label={item.handler} value={item.count} total={Math.max(filtered.length, 1)} />
               ))}
+            </div>
+          </div>
+          <div className="panel recent-panel">
+            <div className="panel-title">
+              <div>
+                <h3>Casos recientes</h3>
+                <p className="panel-kicker">Últimos expedientes del portafolio visible</p>
+              </div>
+              <Link className="text-link" to="/casos">Ver todos</Link>
+            </div>
+            <div className="recent-list">
+              {filtered.slice(0, 4).map((caso) => (
+                <Link key={caso.id} to={`/casos/${encodeURIComponent(caso.id)}`} className="recent-row">
+                  <div>
+                    <strong>{caso.id}</strong>
+                    <span>{caso.claimHandler} · {caso.assured || "Sin asegurado"}</span>
+                  </div>
+                  <StatusPill label={caso.estado} tone={caso.estado.includes("Traspasado") ? "ok" : caso.estado === "Datos incompletos" ? "missing" : "warn"} />
+                </Link>
+              ))}
+              {filtered.length === 0 && <EmptyState text="No hay casos recientes para este filtro." />}
             </div>
           </div>
         </div>
@@ -310,6 +404,133 @@ function Distribution({ label, value, total }: { label: string; value: number; t
   );
 }
 
+function BenchmarkPage() {
+  const visibleCases = useVisibleCases();
+  const { documentos, usuario } = useDemoStore();
+  if (usuario.role === "Handler") return <Navigate to="/dashboard" replace />;
+
+  const rows = HANDLERS.map((handler) => {
+    const handlerCases = visibleCases.filter((caso) => caso.claimHandler === handler);
+    const coverageValues = handlerCases.map((caso) => {
+      const completeness = documentCompleteness(documentos.filter((doc) => doc.casoId === caso.id));
+      return (completeness.completed / completeness.total) * 100;
+    });
+    const coverage = coverageValues.length
+      ? Math.round(coverageValues.reduce((sum, value) => sum + value, 0) / coverageValues.length)
+      : 0;
+    const pendingDocumentCases = handlerCases.filter(
+      (caso) => documentCompleteness(documentos.filter((doc) => doc.casoId === caso.id)).missing.length > 0
+    ).length;
+    const alerts = handlerCases.filter((caso) => {
+      const prescription = prescriptionStatus(caso);
+      return prescription.tone !== "ok" || daysWithoutMovement(caso) >= 14;
+    }).length;
+    const stale = handlerCases.filter((caso) => daysWithoutMovement(caso) >= 14).length;
+    const completeCalculations = handlerCases.filter((caso) => caso.estado === "Cálculo completo").length;
+    return {
+      handler,
+      total: handlerCases.length,
+      pendingDocumentCases,
+      alerts,
+      stale,
+      coverage,
+      completeCalculations
+    };
+  });
+  const totals = rows.reduce(
+    (sum, row) => ({
+      total: sum.total + row.total,
+      pendingDocumentCases: sum.pendingDocumentCases + row.pendingDocumentCases,
+      alerts: sum.alerts + row.alerts,
+      stale: sum.stale + row.stale,
+      completeCalculations: sum.completeCalculations + row.completeCalculations
+    }),
+    { total: 0, pendingDocumentCases: 0, alerts: 0, stale: 0, completeCalculations: 0 }
+  );
+  const portfolioCoverage = visibleCases.length
+    ? Math.round(
+        visibleCases.reduce((sum, caso) => {
+          const completeness = documentCompleteness(documentos.filter((doc) => doc.casoId === caso.id));
+          return sum + (completeness.completed / completeness.total) * 100;
+        }, 0) / visibleCases.length
+      )
+    : 0;
+
+  return (
+    <AppShell>
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Benchmark operativo</p>
+          <h2>Comparativa general por handler</h2>
+          <p className="mt-2 max-w-3xl text-sm text-slate-600">
+            Vista gerencial para comparar carga, pendientes, riesgo y avance del portafolio visible.
+          </p>
+        </div>
+        <Link className="button-secondary" to="/dashboard">
+          <LayoutDashboard size={17} /> Ir al dashboard
+        </Link>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-5">
+        <Metric title="Casos totales" value={totals.total} icon={<BarChart3 size={20} />} />
+        <Metric title="Con docs pendientes" value={totals.pendingDocumentCases} icon={<FileText size={20} />} tone="warn" />
+        <Metric title="Con alerta" value={totals.alerts} icon={<AlertTriangle size={20} />} tone="danger" />
+        <Metric title="Sin movimiento" value={totals.stale} icon={<CalendarClock size={20} />} tone="warn" />
+        <Metric title="Cálculo completo" value={totals.completeCalculations} icon={<Check size={20} />} />
+      </div>
+
+      <section className="panel mt-6">
+        <div className="panel-title">
+          <div>
+            <h3>Indicadores por handler</h3>
+            <p className="mt-1 text-sm font-normal text-slate-500">Cobertura documental promedio por caso y alertas activas según las reglas del Dashboard.</p>
+          </div>
+          <span>Cobertura portafolio: {portfolioCoverage}%</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="data-table min-w-[820px]">
+            <thead>
+              <tr>
+                <th>Handler</th>
+                <th>Casos</th>
+                <th>Docs pendientes</th>
+                <th>Alertas</th>
+                <th>Sin movimiento</th>
+                <th>Cobertura docs</th>
+                <th>Cálculo completo</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.handler}>
+                  <td className="font-semibold">{row.handler}</td>
+                  <td>{row.total}</td>
+                  <td><StatusPill label={String(row.pendingDocumentCases)} tone={row.pendingDocumentCases > 0 ? "warn" : "ok"} /></td>
+                  <td><StatusPill label={String(row.alerts)} tone={row.alerts > 0 ? "danger" : "ok"} /></td>
+                  <td><StatusPill label={String(row.stale)} tone={row.stale > 0 ? "warn" : "ok"} /></td>
+                  <td className="min-w-48">
+                    <div className="mb-1 flex items-center justify-between text-sm">
+                      <span>{row.coverage}%</span>
+                      <span className="text-slate-400">promedio</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-slate-100">
+                      <div className="h-2 rounded-full bg-accent" style={{ width: `${row.coverage}%` }} />
+                    </div>
+                  </td>
+                  <td>{row.completeCalculations} / {row.total}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="notice mt-4">
+          Docs pendientes = al menos un documento del checklist faltante. Alerta = prescripción no verde o 14 días o más sin movimiento.
+        </div>
+      </section>
+    </AppShell>
+  );
+}
+
 function CasesPage() {
   const visibleCases = useVisibleCases();
   const { usuario } = useDemoStore();
@@ -324,7 +545,8 @@ function CasesPage() {
       <div className="section-heading">
         <div>
           <p className="eyebrow">Lista de casos</p>
-          <h2>Portafolio visible para {usuario.role}</h2>
+          <h2>{usuario.role === "Handler" ? "Mis casos" : "Portafolio completo"}</h2>
+          <p className="section-subtitle">Busca, filtra y entra al expediente para continuar el ciclo preclaim.</p>
         </div>
         {usuario.role === "Handler" && (
           <Link className="button-primary" to="/casos/nuevo">
@@ -530,6 +752,7 @@ function CaseDetailPage() {
   const staleDays = daysWithoutMovement(caso);
   const canWrite = usuario.role === "Handler" && caso.claimHandler === usuario.nombre;
   const nextStatus = nextStatusFromCase(caso, caseDocs, calculo);
+  const canAdvance = nextStatus !== caso.estado;
 
   const changeTab = (next: string) => {
     setTab(next);
@@ -574,11 +797,21 @@ function CaseDetailPage() {
         </div>
         <div className="case-actions">
           {notice && <p className="notice">{notice}</p>}
+          {usuario.role === "Handler" && !canWrite && (
+            <p className="notice">
+              Este caso está asignado a <strong>{caso.claimHandler}</strong>. Selecciona ese Handler para editarlo.
+            </p>
+          )}
           {canWrite && caso.estado !== "Traspasado a FIS" && caso.estado !== "Traspasado a Logistic" && (
             <>
               {caso.estado !== "Cálculo completo" ? (
-                <button className="button-primary" onClick={actionPrimary}>
-                  <Check size={17} /> Marcar documentación completa
+                <button
+                  className="button-primary"
+                  onClick={actionPrimary}
+                  disabled={!canAdvance}
+                  title={canAdvance ? `Avanzar a ${nextStatus}` : "Completa los documentos y el cálculo antes de avanzar."}
+                >
+                  <Check size={17} /> {canAdvance ? `Avanzar a ${nextStatus}` : "Revisar pendientes"}
                 </button>
               ) : (
                 <div className="flex gap-2">
@@ -606,6 +839,30 @@ function CaseDetailPage() {
           )}
         </div>
       </section>
+
+      <div className="case-summary-grid">
+        <CaseSummaryMetric
+          label="Riesgo de prescripción"
+          value={pres.label}
+          detail={caso.fechaPrescripcion ? `Vence ${new Date(caso.fechaPrescripcion).toLocaleDateString("es-CL")}` : "Fecha o jurisdicción pendiente"}
+          icon={<AlertTriangle size={19} />}
+          tone={pres.tone === "danger" ? "danger" : pres.tone === "warn" ? "warn" : "ok"}
+        />
+        <CaseSummaryMetric
+          label="Días sin movimiento"
+          value={`${staleDays} días`}
+          detail={`Último cambio ${new Date(caso.ultimaActualizacion).toLocaleDateString("es-CL")}`}
+          icon={<CalendarClock size={19} />}
+          tone={staleDays >= 14 ? "warn" : "ok"}
+        />
+        <CaseSummaryMetric
+          label="Recupero estimado"
+          value={calculo?.montoFinalReclamo !== undefined ? currency(calculo.montoFinalReclamo, calculo.moneda) : "Sin cálculo"}
+          detail={calculo?.metodoSeleccionado ? `Método ${calculo.metodoSeleccionado} seleccionado` : "Pendiente de cálculo"}
+          icon={<BarChart3 size={19} />}
+          tone="ok"
+        />
+      </div>
 
       {showTransfer && (
         <Modal title="Confirmar traspaso" onClose={() => setShowTransfer(null)}>
@@ -637,6 +894,31 @@ function CaseDetailPage() {
       {tab === "historial" && <HistoryTab events={events} />}
       {tab === "cartas" && <LettersTab caso={caso} docs={caseDocs} canWrite={canWrite} />}
     </AppShell>
+  );
+}
+
+function CaseSummaryMetric({
+  label,
+  value,
+  detail,
+  icon,
+  tone
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  icon: React.ReactNode;
+  tone: "ok" | "warn" | "danger";
+}) {
+  return (
+    <div className={cx("case-summary-metric", tone)}>
+      <div className="case-summary-heading">
+        <span>{label}</span>
+        <div className="case-summary-icon">{icon}</div>
+      </div>
+      <strong>{value}</strong>
+      <p>{detail}</p>
+    </div>
   );
 }
 
@@ -1165,6 +1447,11 @@ function ManualPage() {
       title: "10. Cartas automatizadas",
       body:
         "Genera una carta editable de notificación a la naviera con datos del caso y marca como [PENDIENTE COMPLETAR] cualquier campo faltante."
+    },
+    {
+      title: "11. Benchmark por handler",
+      body:
+        "Vista gerencial que compara por handler los casos totales, documentación pendiente, alertas activas, casos sin movimiento, cobertura documental promedio y cálculos completos."
     }
   ];
   const roleGuides = [
@@ -1176,12 +1463,12 @@ function ManualPage() {
     {
       role: "Gerente",
       guide:
-        "Supervisar todos los casos, filtrar por handler, revisar alertas y revertir estados con motivo obligatorio."
+        "Supervisar todos los casos, comparar desempeño por handler, filtrar alertas y revertir estados con motivo obligatorio."
     },
     {
       role: "CEO",
       guide:
-        "Revisar el portafolio completo, riesgos de prescripción y estado ejecutivo sin editar documentos ni cálculos."
+        "Revisar el portafolio completo, comparar indicadores por handler, riesgos de prescripción y estado ejecutivo sin editar documentos ni cálculos."
     }
   ];
   return (
@@ -1215,7 +1502,7 @@ function ManualPage() {
               <li>Confirmar análisis de causa.</li>
               <li>Guardar cálculo con método seleccionado y justificación.</li>
               <li>Avanzar estado y generar carta.</li>
-              <li>Cambiar a Gerente para revisar dashboard, alertas y reversión.</li>
+              <li>Cambiar a Gerente para revisar dashboard, benchmark, alertas y reversión.</li>
             </ol>
           </div>
           <div className="panel">
@@ -1313,6 +1600,7 @@ export default function App() {
       <Route path="/casos" element={<CasesPage />} />
       <Route path="/casos/nuevo" element={<NewCasePage />} />
       <Route path="/casos/:id" element={<CaseDetailPage />} />
+      <Route path="/benchmark" element={<BenchmarkPage />} />
       <Route path="/manual" element={<ManualPage />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>

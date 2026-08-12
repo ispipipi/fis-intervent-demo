@@ -35,7 +35,7 @@ npm run dev
 
 No abras `index.html` directo desde la carpeta raíz del proyecto: ese archivo es fuente de Vite y Chrome bloquea sus módulos si se carga como `file://`.
 
-Para revisar una versión estática, ejecuta `npm run build` y abre `dist/index.html`.
+Para revisar una versión estática, ejecuta `npm run build` y luego `npm run preview`. Abre la URL HTTP que imprime Vite. No abras `dist/index.html` directamente como `file://`, porque Chrome bloquea los módulos JavaScript y la pantalla queda en blanco.
 
 ## Deploy GitHub Pages
 

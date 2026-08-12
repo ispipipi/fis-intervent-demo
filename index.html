@@ -3,10 +3,64 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <title>Intervent Preclaim Demo</title>
+    <style>
+      .file-preview {
+        min-height: 100%;
+        background: #eaf3ff;
+        color: #1d3150;
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      }
+
+      .file-preview #root {
+        min-height: 100vh;
+      }
+
+      .file-preview .file-preview-card {
+        width: min(560px, calc(100% - 40px));
+        margin: 12vh auto 0;
+        padding: 28px;
+        border: 1px solid #dce7f5;
+        border-radius: 16px;
+        background: #fff;
+        box-shadow: 0 12px 28px rgba(56, 91, 139, 0.1);
+      }
+
+      .file-preview h1 {
+        margin: 0;
+        font-size: 24px;
+      }
+
+      .file-preview p {
+        color: #687991;
+        line-height: 1.6;
+      }
+
+      .file-preview a {
+        display: inline-flex;
+        min-height: 40px;
+        align-items: center;
+        padding: 0 16px;
+        border-radius: 12px;
+        background: #1d3150;
+        color: #fff;
+        font-weight: 600;
+        text-decoration: none;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      if (window.location.protocol === "file:") {
+        document.documentElement.className = "file-preview";
+        document.getElementById("root").innerHTML =
+          '<section class="file-preview-card"><h1>Intervent Preclaim</h1><p>La demo se ejecuta desde un servidor local para cargar correctamente sus módulos.</p><a href="http://127.0.0.1:4187/">Abrir demo funcional</a></section>';
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
