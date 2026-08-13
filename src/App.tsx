@@ -66,7 +66,7 @@ const STATUS_LABELS: CaseStatus[] = [
   "Traspasado a FIS",
   "Traspasado a Logistic"
 ];
-const COMPANY_LOGO_SRC = `${import.meta.env.BASE_URL}logo.svg`;
+const COMPANY_LOGO_SRC = `${import.meta.env.BASE_URL}fis-logo.jpeg`;
 
 function cx(...classes: Array<string | false | undefined>) {
   return classes.filter(Boolean).join(" ");
