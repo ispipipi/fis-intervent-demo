@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useMemo, useState } from "react";
+import { ChangeEvent, DragEvent, FormEvent, useMemo, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   AlertTriangle,
@@ -11,6 +11,7 @@ import {
   Copy,
   Download,
   FileText,
+  FileCheck2,
   FolderUp,
   HelpCircle,
   History,
@@ -33,8 +34,15 @@ import {
   DocumentType,
   Jurisdiccion,
   NewCaseInput,
-  RubroAdicional
+  RubroAdicional,
+  ExtractedCaseData,
+  ExtractedLossProposal,
+  ReviewReport,
+  TransferDestination,
+  UploadDraft
 } from "./types/domain";
+import { mergeExtractedData, processDocumentFiles } from "./lib/extraction";
+import { buildReviewReportText } from "./lib/review";
 import {
   canEditCalculation,
   currency,
@@ -46,7 +54,8 @@ import {
   nextStatusFromCase,
   pendingField,
   prescriptionStatus,
-  suggestDamageMerit
+  suggestDamageMerit,
+  suggestHandler
 } from "./lib/business";
 
 const STATUS_LABELS: CaseStatus[] = [
@@ -60,6 +69,16 @@ const STATUS_LABELS: CaseStatus[] = [
 
 function cx(...classes: Array<string | false | undefined>) {
   return classes.filter(Boolean).join(" ");
+}
+
+function downloadTextFile(fileName: string, text: string) {
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function useVisibleCases() {
@@ -612,9 +631,14 @@ function CasesPage() {
 }
 
 function NewCasePage() {
-  const { usuario, createCase } = useDemoStore();
+  const { usuario, casos, createCase, prepareUpload, confirmUpload } = useDemoStore();
   const navigate = useNavigate();
   const [input, setInput] = useState<NewCaseInput>({ claimHandler: usuario.nombre });
+  const [drafts, setDrafts] = useState<UploadDraft[]>([]);
+  const [proposal, setProposal] = useState<ExtractedCaseData>();
+  const [isDragging, setIsDragging] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingError, setProcessingError] = useState("");
   const [error, setError] = useState("");
   const hasData = Object.values(input).some(Boolean);
   if (usuario.role !== "Handler") return <Navigate to="/casos" replace />;
@@ -625,10 +649,59 @@ function NewCasePage() {
       [key]: key === "claimAmount" ? (value ? Number(value) : undefined) : value || undefined
     }));
   };
+  const processFolder = async (files: FileList | File[]) => {
+    if (files.length === 0) return;
+    setProcessingError("");
+    setIsProcessing(true);
+    try {
+      const processed = await processDocumentFiles(Array.from(files));
+      const extracted = mergeExtractedData(processed, input.id || "");
+      setDrafts(processed);
+      setProposal(extracted);
+      setInput((current) => ({
+        ...current,
+        id: current.id || extracted.referencia,
+        claimHandler: suggestHandler(extracted.assured) || current.claimHandler || usuario.nombre,
+        csClaimNo: current.csClaimNo || extracted.csClaimNo,
+        assured: current.assured || extracted.assured,
+        opponent: current.opponent || extracted.opponent,
+        vessel: current.vessel || extracted.vessel,
+        voyage: current.voyage || extracted.voyage,
+        cargo: current.cargo || extracted.cargo,
+        placeOfShipment: current.placeOfShipment || extracted.placeOfShipment,
+        dateOfShipment: current.dateOfShipment || extracted.dateOfShipment,
+        placeOfDischarge: current.placeOfDischarge || extracted.placeOfDischarge,
+        dateOfDischarge: current.dateOfDischarge || extracted.dateOfDischarge,
+        surveyor: current.surveyor || extracted.surveyor,
+        claimAmount: current.claimAmount ?? extracted.claimAmount,
+        tipoCaso: current.tipoCaso || extracted.tipoCaso,
+        resumenCaso: current.resumenCaso || extracted.resumenCaso,
+        causaPotencial: current.causaPotencial || extracted.causaPotencial,
+        causaDano: current.causaDano || (extracted.causaPotencial?.toLowerCase().includes("térmica") ? "Temperatura" : undefined),
+        fuentesCausa: extracted.fuentesCausa,
+        propuestaPerdida: current.propuestaPerdida || extracted.propuestaPerdida
+      }));
+    } catch {
+      setProcessingError("No fue posible leer la carpeta completa. Puedes continuar con la carga de metadata y corregir los datos manualmente.");
+      setDrafts(prepareUpload(files));
+      setProposal(undefined);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+  const onFolderChange = (event: ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files) processFolder(event.target.files);
+  };
+  const onFolderDrop = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    setIsDragging(false);
+    processFolder(event.dataTransfer.files);
+  };
   const validateComplete = () => {
     if (!hasRequiredMinimum(input)) return "Completa handler, asegurado, oponente, nave, fecha de descarga y jurisdicción.";
     if (input.dateOfDischarge && input.dateOfDischarge > new Date().toISOString().slice(0, 10)) return "La fecha de descarga no puede ser futura.";
     if (input.claimAmount !== undefined && input.claimAmount <= 0) return "El monto reclamado debe ser positivo.";
+    if (input.id && casos.some((caso) => caso.id === input.id)) return "La referencia ya existe en el expediente. Abre el caso existente o corrige la referencia antes de continuar.";
     return "";
   };
   const save = (complete: boolean) => {
@@ -638,6 +711,7 @@ function NewCasePage() {
       return;
     }
     const caso = createCase(input, complete);
+    if (drafts.length > 0) confirmUpload(caso.id, drafts);
     navigate(`/casos/${encodeURIComponent(caso.id)}?tab=documentos`);
   };
 
@@ -650,11 +724,77 @@ function NewCasePage() {
         <div className="section-heading">
           <div>
             <p className="eyebrow">Nuevo caso</p>
-            <h2>Alta manual de metadatos</h2>
+            <h2>Ingreso documental del caso</h2>
           </div>
-          <StatusPill label="No se deriva de documentos" tone="missing" />
+          <StatusPill label="Carpeta + extracción asistida" tone="ok" />
         </div>
         {error && <div className="form-error">{error}</div>}
+        <section className="new-case-intake">
+          <div className="panel-title">
+            <div>
+              <h3>Carga la carpeta documental</h3>
+              <p>El sistema leerá los archivos compatibles, identificará el caso y preparará una propuesta editable.</p>
+            </div>
+            {drafts.length > 0 && <span className="upload-count">{drafts.length} archivos</span>}
+          </div>
+          <label
+            className={cx("upload-box", isDragging && "dragging")}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setIsDragging(true);
+            }}
+            onDragLeave={(event) => {
+              event.preventDefault();
+              setIsDragging(false);
+            }}
+            onDrop={onFolderDrop}
+          >
+            <FolderUp size={24} />
+            <span>
+              <strong>Arrastra una carpeta o documentos aquí</strong>
+              <small>También puedes seleccionar una carpeta completa</small>
+            </span>
+            <input type="file" multiple onChange={onFolderChange} {...({ webkitdirectory: "", directory: "" } as Record<string, string>)} />
+          </label>
+          {isProcessing && <p className="notice mt-3">Procesando documentos y preparando la propuesta...</p>}
+          {processingError && <div className="form-error mt-3">{processingError}</div>}
+          {drafts.length > 0 && (
+            <div className="intake-file-list">
+              {drafts.map((draft, index) => (
+                <div key={`${draft.originalName}-${index}`} className="upload-draft">
+                  <div>
+                    <p className="font-semibold">{draft.originalName}</p>
+                    <p className="text-xs text-slate-500">{draft.tipoDocumento} · {draft.relativePath || draft.originalName}</p>
+                  </div>
+                  <StatusPill label={draft.estadoExtraccion || "Pendiente"} tone={draft.estadoExtraccion?.startsWith("procesado") ? "ok" : "warn"} />
+                </div>
+              ))}
+            </div>
+          )}
+          {proposal && (
+            <div className="extraction-review mt-5">
+              <div className="panel-title">
+                <div>
+                  <h3>Propuesta detectada para revisión humana</h3>
+                  <p>Los datos quedan editables y se guardan junto con la carpeta al continuar.</p>
+                </div>
+                <span>{proposal.referencia || "Referencia pendiente"}</span>
+              </div>
+              <div className="extraction-grid">
+                <ExtractionValue label="Asegurado" value={input.assured} />
+                <ExtractionValue label="Transportista / oponente" value={input.opponent} />
+                <ExtractionValue label="Nave / viaje" value={[input.vessel, input.voyage].filter(Boolean).join(" / ")} />
+                <ExtractionValue label="Carga" value={input.cargo} />
+                <ExtractionValue label="Embarque" value={[input.placeOfShipment, input.dateOfShipment].filter(Boolean).join(" · ")} />
+                <ExtractionValue label="Descarga" value={[input.placeOfDischarge, input.dateOfDischarge].filter(Boolean).join(" · ")} />
+                <ExtractionValue label="Inspector" value={input.surveyor} />
+                <ExtractionValue label="CS Claim No" value={input.csClaimNo} />
+              </div>
+              <p className="notice mt-3">Handler sugerido por cliente: <strong>{input.claimHandler}</strong>. Puedes modificarlo antes de guardar.</p>
+              {proposal.propuestaPerdida && <LossProposalSummary proposal={proposal.propuestaPerdida} />}
+            </div>
+          )}
+        </section>
         <div className="grid gap-4 md:grid-cols-3">
           <Field label="Reference No editable">
             <input className="input" value={input.id || ""} onChange={(event) => update("id", event.target.value)} placeholder="Autogenerado si queda vacío" />
@@ -703,7 +843,20 @@ function NewCasePage() {
           <Field label="Causa de daño">
             <input className="input" value={input.causaDano || ""} onChange={(event) => update("causaDano", event.target.value)} placeholder="Temperatura, golpe, falta..." />
           </Field>
+          <Field label="Tipo de caso sugerido">
+            <input className="input" value={input.tipoCaso || ""} onChange={(event) => update("tipoCaso", event.target.value)} placeholder="Se completa desde la carpeta" />
+          </Field>
         </div>
+        {proposal && (
+          <div className="grid gap-4 mt-4 md:grid-cols-2">
+            <Field label="Resumen automático editable">
+              <textarea className="input min-h-24" value={input.resumenCaso || ""} onChange={(event) => update("resumenCaso", event.target.value)} />
+            </Field>
+            <Field label="Causa potencial y sustento documental">
+              <textarea className="input min-h-24" value={input.causaPotencial || ""} onChange={(event) => update("causaPotencial", event.target.value)} />
+            </Field>
+          </div>
+        )}
         <div className="mt-6 flex flex-wrap justify-end gap-3">
           <button
             type="button"
@@ -730,7 +883,7 @@ function CaseDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const decodedId = decodeURIComponent(id || "");
-  const { casos, documentos, calculosPerdida, bitacora, usuario, transitionCase, revertCase } = useDemoStore();
+  const { casos, documentos, calculosPerdida, bitacora, usuario, generateReviewReport, transitionCase, revertCase } = useDemoStore();
   const caso = casos.find((item) => item.id === decodedId);
   const params = new URLSearchParams(window.location.search);
   const [tab, setTab] = useState(params.get("tab") || "documentos");
@@ -766,9 +919,19 @@ function CaseDetailPage() {
     }
     transitionCase(caso.id, nextStatus, `Estado actualizado automáticamente a ${nextStatus}.`);
   };
+  const openTransfer = (destination: TransferDestination) => {
+    generateReviewReport(caso.id, destination);
+    setShowTransfer(destination === "FIS" ? "Traspasado a FIS" : "Traspasado a Logistic");
+  };
   const confirmTransfer = () => {
     if (!showTransfer) return;
-    transitionCase(caso.id, showTransfer, `Caso traspasado a ${showTransfer.replace("Traspasado a ", "")}. Edición de cálculo bloqueada.`);
+    const destination = showTransfer.replace("Traspasado a ", "");
+    const reportStatus = caso.informeRevision?.status || "Con observaciones";
+    transitionCase(
+      caso.id,
+      showTransfer,
+      `Caso traspasado a ${destination}. Informe de revisión: ${reportStatus}. Edición de cálculo bloqueada.`
+    );
     setShowTransfer(null);
   };
   const submitRevert = () => {
@@ -815,13 +978,18 @@ function CaseDetailPage() {
                 </button>
               ) : (
                 <div className="flex gap-2">
-                  <button className="button-primary" onClick={() => setShowTransfer("Traspasado a FIS")}>Traspasar a FIS</button>
-                  <button className="button-secondary" onClick={() => setShowTransfer("Traspasado a Logistic")}>Traspasar a Logistic</button>
+                  <button className="button-primary" onClick={() => openTransfer("FIS")}>Traspasar a FIS</button>
+                  <button className="button-secondary" onClick={() => openTransfer("Logistic")}>Traspasar a Logistic</button>
                 </div>
               )}
             </>
           )}
-          {usuario.role !== "Handler" && (
+          {usuario.role === "CEO" && (
+            <p className="notice">
+              Vista dirección: este perfil es de solo lectura. La reversión de estados corresponde al Gerente.
+            </p>
+          )}
+          {usuario.role === "Gerente" && (
             <div className="revert-box">
               <div className="flex items-center gap-2 text-sm font-semibold">
                 <Lock size={15} /> Reversión gerencial
@@ -864,12 +1032,47 @@ function CaseDetailPage() {
         />
       </div>
 
+      {(caso.resumenCaso || caso.tipoCaso || caso.causaPotencial) && (
+        <section className="panel case-intelligence-panel">
+          <div className="panel-title">
+            <div>
+              <h3>Resumen preliminar del expediente</h3>
+              <p>Información extraída y confirmada por el handler.</p>
+            </div>
+            {caso.tipoCaso && <StatusPill label={caso.tipoCaso} tone="warn" />}
+          </div>
+          {caso.resumenCaso && <p className="case-summary-copy">{caso.resumenCaso}</p>}
+          {caso.causaPotencial && (
+            <div className="case-cause-note">
+              <strong>Causa potencial</strong>
+              <p>{caso.causaPotencial}</p>
+              {caso.fuentesCausa && caso.fuentesCausa.length > 0 && <small>Sustento: {caso.fuentesCausa.join(", ")}</small>}
+            </div>
+          )}
+        </section>
+      )}
+
       {showTransfer && (
         <Modal title="Confirmar traspaso" onClose={() => setShowTransfer(null)}>
-          <p>Esto notificará el traspaso simulado y bloqueará la edición de la pestaña Cálculo. ¿Confirmar?</p>
+          <p className="mb-4">
+            Revisa el informe antes de confirmar. El traspaso es simulado y bloqueará la edición de la pestaña Cálculo.
+          </p>
+          {caso.informeRevision && <ReviewReportContent report={caso.informeRevision} compact />}
           <div className="mt-5 flex justify-end gap-3">
             <button className="button-secondary" onClick={() => setShowTransfer(null)}>Cancelar</button>
-            <button className="button-primary" onClick={confirmTransfer}>Confirmar</button>
+            {caso.informeRevision && (
+              <>
+                <button
+                  className="button-secondary"
+                  onClick={() => downloadTextFile(`${caso.id}_informe_revision.txt`, buildReviewReportText(caso.informeRevision!))}
+                >
+                  <Download size={16} /> Descargar informe
+                </button>
+                <button className="button-primary" onClick={confirmTransfer}>
+                  <Check size={16} /> Confirmar con {caso.informeRevision.ready ? "informe listo" : "observaciones"}
+                </button>
+              </>
+            )}
           </div>
         </Modal>
       )}
@@ -879,6 +1082,7 @@ function CaseDetailPage() {
           ["documentos", "Documentos", <FolderUp size={16} key="i" />],
           ["analisis", "Análisis", <ShieldCheck size={16} key="i" />],
           ["calculo", "Cálculo", <BarChart3 size={16} key="i" />],
+          ["informe", "Informe", <FileCheck2 size={16} key="i" />],
           ["historial", "Historial", <History size={16} key="i" />],
           ["cartas", "Cartas", <FileText size={16} key="i" />]
         ].map(([key, label, icon]) => (
@@ -891,6 +1095,7 @@ function CaseDetailPage() {
       {tab === "documentos" && <DocumentsTab caso={caso} docs={caseDocs} canWrite={canWrite} />}
       {tab === "analisis" && <AnalysisTab caso={caso} docs={caseDocs} canWrite={canWrite} />}
       {tab === "calculo" && <CalculationTab caso={caso} calculo={calculo} canWrite={canWrite && canEditCalculation(caso)} />}
+      {tab === "informe" && <ReviewReportTab caso={caso} docs={caseDocs} calculo={calculo} canWrite={canWrite} />}
       {tab === "historial" && <HistoryTab events={events} />}
       {tab === "cartas" && <LettersTab caso={caso} docs={caseDocs} canWrite={canWrite} />}
     </AppShell>
@@ -922,37 +1127,170 @@ function CaseSummaryMetric({
   );
 }
 
+function ExtractionValue({ label, value }: { label: string; value?: string }) {
+  return (
+    <div className="extraction-value">
+      <span>{label}</span>
+      <strong>{value || "No detectado"}</strong>
+    </div>
+  );
+}
+
+function LossProposalSummary({ proposal }: { proposal: ExtractedLossProposal }) {
+  const methods = [
+    {
+      label: "Embarque comparable",
+      reference: proposal.metodo1_liquidacionComparativa,
+      actual: proposal.metodo1_liquidacionReal
+    },
+    {
+      label: "Reporte de mercado",
+      reference: proposal.metodo2_valorReporteMercado,
+      actual: proposal.metodo2_liquidacionReal
+    },
+    {
+      label: "Factura vs. venta destino",
+      reference: proposal.metodo3_valorFactura,
+      actual: proposal.metodo3_ventaBrutaDestino
+    }
+  ];
+  return (
+    <div className="loss-proposal-summary">
+      <div className="loss-proposal-heading">
+        <strong>Propuesta preliminar de pérdida</strong>
+        <span>{proposal.moneda} · revisión humana obligatoria</span>
+      </div>
+      <div className="loss-proposal-grid">
+        {methods.map((method) => (
+          <div key={method.label} className="loss-proposal-method">
+            <span>{method.label}</span>
+            <strong>{method.reference !== undefined && method.actual !== undefined ? currency(method.reference - method.actual, proposal.moneda) : "Sin datos"}</strong>
+            <small>{method.reference !== undefined ? `Base ${currency(method.reference, proposal.moneda)}` : "Base pendiente"}</small>
+          </div>
+        ))}
+      </div>
+      {proposal.montoFinalReclamo !== undefined && (
+        <p className="loss-proposal-final">Monto indicativo documentado: <strong>{currency(proposal.montoFinalReclamo, proposal.moneda)}</strong></p>
+      )}
+      {proposal.rubrosAdicionales.length > 0 && <p className="loss-proposal-source">Ajustes detectados: {proposal.rubrosAdicionales.map((item) => `${item.concepto} ${currency(item.monto, proposal.moneda)}`).join(" · ")}</p>}
+      <p className="loss-proposal-source">Sustento: {proposal.fuentes.join(", ")}</p>
+    </div>
+  );
+}
+
 function DocumentsTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<typeof useDemoStore.getState>["documentos"]; canWrite: boolean }) {
-  const { prepareUpload, confirmUpload, removeDocument } = useDemoStore();
-  const [drafts, setDrafts] = useState<Array<{ originalName: string; tipoDocumento: DocumentType }>>([]);
+  const { prepareUpload, confirmUpload, removeDocument, updateCase } = useDemoStore();
+  const [drafts, setDrafts] = useState<UploadDraft[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingError, setProcessingError] = useState("");
+  const [extractionProposal, setExtractionProposal] = useState<ExtractedCaseData>();
+  const [reviewSummary, setReviewSummary] = useState("");
+  const [reviewCause, setReviewCause] = useState("");
+  const [reviewType, setReviewType] = useState("");
+  const [extractionApplied, setExtractionApplied] = useState(false);
   const completeness = documentCompleteness(docs);
   const grouped = DOCUMENT_TYPES.map((type) => ({ type, docs: docs.filter((doc) => doc.tipoDocumento === type && doc.disponible) }));
+  const addFiles = async (files: FileList | File[]) => {
+    if (files.length === 0) return;
+    setProcessingError("");
+    setExtractionApplied(false);
+    setIsProcessing(true);
+    try {
+      const processed = await processDocumentFiles(Array.from(files));
+      setDrafts(processed);
+      const proposal = mergeExtractedData(processed, caso.id);
+      setExtractionProposal(proposal);
+      setReviewSummary(proposal.resumenCaso || "");
+      setReviewCause(proposal.causaPotencial || "");
+      setReviewType(proposal.tipoCaso || "");
+    } catch {
+      setProcessingError("No fue posible procesar todos los archivos. Revisa la carga e inténtalo nuevamente.");
+      setDrafts(prepareUpload(files));
+      setExtractionProposal(undefined);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
   const onFiles = (event: ChangeEvent<HTMLInputElement>) => {
-    if (!event.target.files) return;
-    setDrafts(prepareUpload(event.target.files));
+    if (event.target.files) addFiles(event.target.files);
+  };
+  const onDragOver = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    if (canWrite) setIsDragging(true);
+  };
+  const onDragLeave = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    setIsDragging(false);
+  };
+  const onDrop = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    setIsDragging(false);
+    if (canWrite) addFiles(event.dataTransfer.files);
+  };
+  const applyExtraction = () => {
+    if (!canWrite || !extractionProposal) return;
+    const patch: Partial<Caso> = {
+      csClaimNo: extractionProposal.csClaimNo,
+      assured: extractionProposal.assured,
+      opponent: extractionProposal.opponent,
+      vessel: extractionProposal.vessel,
+      voyage: extractionProposal.voyage,
+      cargo: extractionProposal.cargo,
+      placeOfShipment: extractionProposal.placeOfShipment,
+      dateOfShipment: extractionProposal.dateOfShipment,
+      placeOfDischarge: extractionProposal.placeOfDischarge,
+      dateOfDischarge: extractionProposal.dateOfDischarge,
+      surveyor: extractionProposal.surveyor,
+      claimAmount: extractionProposal.claimAmount,
+      tipoCaso: reviewType.trim() || extractionProposal.tipoCaso,
+      resumenCaso: reviewSummary.trim() || extractionProposal.resumenCaso,
+      causaPotencial: reviewCause.trim() || extractionProposal.causaPotencial,
+      fuentesCausa: extractionProposal.fuentesCausa,
+      propuestaPerdida: extractionProposal.propuestaPerdida
+    };
+    if (extractionProposal.causaPotencial?.toLowerCase().includes("térmica")) patch.causaDano = "Temperatura";
+    updateCase(caso.id, Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)) as Partial<Caso>);
+    setExtractionApplied(true);
   };
   return (
     <section className="grid gap-5 lg:grid-cols-[1fr_1.1fr]">
       <div className="panel">
         <div className="panel-title">
           <h3>Ingesta y clasificación</h3>
-          <span>Metadata only</span>
+          <span>Lectura asistida</span>
         </div>
         {!canWrite && <ReadonlyBanner />}
         {canWrite && (
           <>
-            <label className="upload-box">
+            <label
+              className={cx("upload-box", isDragging && "dragging")}
+              onDragOver={onDragOver}
+              onDragLeave={onDragLeave}
+              onDrop={onDrop}
+            >
               <FolderUp size={24} />
-              <span>Seleccionar múltiples documentos</span>
-              <input type="file" multiple onChange={onFiles} />
+              <span>
+                <strong>Arrastra una carpeta o documentos aquí</strong>
+                <small>También puedes seleccionar una carpeta completa</small>
+              </span>
+              <input
+                type="file"
+                multiple
+                onChange={onFiles}
+                {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
+              />
             </label>
+            {isProcessing && <p className="notice mt-3">Procesando contenido documental y preparando propuesta de datos...</p>}
+            {processingError && <div className="form-error mt-3">{processingError}</div>}
             {drafts.length > 0 && (
               <div className="mt-4 space-y-3">
+                <p className="upload-count">{drafts.length} archivo(s) detectado(s) para {caso.id}</p>
                 {drafts.map((draft, index) => (
                   <div key={`${draft.originalName}-${index}`} className="upload-draft">
                     <div>
                       <p className="font-semibold">{draft.originalName}</p>
-                      <p className="text-xs text-slate-500">Se guardará solo nombre, tipo, fecha y pathMock.</p>
+                      <p className="text-xs text-slate-500">{draft.estadoExtraccion || "Pendiente"} · {draft.relativePath || draft.originalName}</p>
                     </div>
                     <select
                       className="input w-72"
@@ -981,6 +1319,48 @@ function DocumentsTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<t
                   <Check size={17} /> Confirmar carga
                 </button>
               </div>
+            )}
+            {extractionProposal && (
+              <section className="extraction-review mt-5">
+                <div className="panel-title">
+                  <div>
+                    <h3>Datos detectados para revisión humana</h3>
+                    <p>La propuesta no modifica el caso hasta que el Handler la confirme.</p>
+                  </div>
+                  <span>{extractionProposal.referencia || caso.id}</span>
+                </div>
+                <div className="extraction-grid">
+                  <ExtractionValue label="Asegurado" value={extractionProposal.assured} />
+                  <ExtractionValue label="Transportista / oponente" value={extractionProposal.opponent} />
+                  <ExtractionValue label="Nave / viaje" value={[extractionProposal.vessel, extractionProposal.voyage].filter(Boolean).join(" / ")} />
+                  <ExtractionValue label="Carga" value={extractionProposal.cargo} />
+                  <ExtractionValue label="Embarque" value={[extractionProposal.placeOfShipment, extractionProposal.dateOfShipment].filter(Boolean).join(" · ")} />
+                  <ExtractionValue label="Descarga" value={[extractionProposal.placeOfDischarge, extractionProposal.dateOfDischarge].filter(Boolean).join(" · ")} />
+                  <ExtractionValue label="Inspector" value={extractionProposal.surveyor} />
+                  <ExtractionValue label="Monto reclamado" value={extractionProposal.claimAmount ? currency(extractionProposal.claimAmount) : undefined} />
+                </div>
+                {extractionProposal.referenciasDetectadas && extractionProposal.referenciasDetectadas.length > 1 && (
+                  <div className="notice mt-3">Se detectaron varias referencias: {extractionProposal.referenciasDetectadas.join(", ")}. Revisa antes de aplicar.</div>
+                )}
+                <Field label="Tipo de caso sugerido">
+                  <input className="input" disabled={!canWrite} value={reviewType} onChange={(event) => setReviewType(event.target.value)} />
+                </Field>
+                <Field label="Resumen automático editable">
+                  <textarea className="input min-h-24" disabled={!canWrite} value={reviewSummary} onChange={(event) => setReviewSummary(event.target.value)} />
+                </Field>
+                <Field label="Causa potencial y sustento documental">
+                  <textarea className="input min-h-24" disabled={!canWrite} value={reviewCause} onChange={(event) => setReviewCause(event.target.value)} />
+                </Field>
+                {extractionProposal.fuentesCausa && extractionProposal.fuentesCausa.length > 0 && (
+                  <p className="extraction-sources">Sustento detectado en: {extractionProposal.fuentesCausa.join(", ")}</p>
+                )}
+                {extractionProposal.propuestaPerdida && <LossProposalSummary proposal={extractionProposal.propuestaPerdida} />}
+                {canWrite && (
+                  <button className="button-primary mt-3" type="button" onClick={applyExtraction}>
+                    <Check size={17} /> {extractionApplied ? "Datos aplicados al caso" : "Confirmar datos detectados"}
+                  </button>
+                )}
+              </section>
             )}
           </>
         )}
@@ -1171,6 +1551,22 @@ function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calculo?: Cal
     const result = saveCalculation(computed);
     setError(result.ok ? "" : result.error || "No se pudo guardar.");
   };
+  const loadProposal = () => {
+    if (!caso.propuestaPerdida || !canWrite) return;
+    setForm((current) => ({
+      ...current,
+      moneda: caso.propuestaPerdida?.moneda || current.moneda,
+      metodo1_liquidacionReal: caso.propuestaPerdida?.metodo1_liquidacionReal,
+      metodo1_liquidacionComparativa: caso.propuestaPerdida?.metodo1_liquidacionComparativa,
+      metodo2_valorReporteMercado: caso.propuestaPerdida?.metodo2_valorReporteMercado,
+      metodo2_liquidacionReal: caso.propuestaPerdida?.metodo2_liquidacionReal,
+      metodo3_valorFactura: caso.propuestaPerdida?.metodo3_valorFactura,
+      metodo3_ventaBrutaDestino: caso.propuestaPerdida?.metodo3_ventaBrutaDestino,
+      rubrosAdicionales: caso.propuestaPerdida?.rubrosAdicionales || [],
+      metodoSeleccionado: undefined,
+      justificacionSeleccion: ""
+    }));
+  };
   const methods = [
     { id: "1" as const, title: "Método 1 · SMV", result: computed.metodo1_resultado, formula: "liquidación comparativa - liquidación real" },
     { id: "2" as const, title: "Método 2 · Mercado", result: computed.metodo2_resultado, formula: "valor reporte mercado - liquidación real" },
@@ -1188,6 +1584,23 @@ function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calculo?: Cal
           <strong>Conclusión de causa de daño</strong>
           <p>{caso.analisisCausa?.conclusionFinal || "Sin conclusión confirmada todavía."}</p>
         </div>
+        {caso.propuestaPerdida && (
+          <div className="calculation-proposal">
+            <div className="panel-title">
+              <div>
+                <h3>Propuesta desde documentos</h3>
+                <p>Valores detectados para cargar como base editable. No selecciona un método ni completa el caso automáticamente.</p>
+              </div>
+              <span>{caso.propuestaPerdida.moneda}</span>
+            </div>
+            <LossProposalSummary proposal={caso.propuestaPerdida} />
+            {canWrite && (
+              <button type="button" className="button-secondary small mt-3" onClick={loadProposal}>
+                <Download size={15} /> Cargar valores como base editable
+              </button>
+            )}
+          </div>
+        )}
         {error && <div className="form-error">{error}</div>}
         <div className="grid gap-4 md:grid-cols-3">
           <Field label="Moneda">
@@ -1319,6 +1732,143 @@ function FinalClaim({ value, moneda }: { value?: number; moneda: "USD" | "CLP" }
   );
 }
 
+function ReviewReportTab({
+  caso,
+  docs,
+  calculo,
+  canWrite
+}: {
+  caso: Caso;
+  docs: ReturnType<typeof useDemoStore.getState>["documentos"];
+  calculo?: CalculoPerdida;
+  canWrite: boolean;
+}) {
+  const { generateReviewReport } = useDemoStore();
+  const [destination, setDestination] = useState<TransferDestination>(caso.informeRevision?.destination || "FIS");
+  const report = caso.informeRevision;
+
+  const generate = () => generateReviewReport(caso.id, destination);
+  const download = () => {
+    if (!report) return;
+    downloadTextFile(`${caso.id}_informe_revision_${report.destination}.txt`, buildReviewReportText(report));
+  };
+
+  return (
+    <section className="space-y-5">
+      <section className="panel review-report-intro">
+        <div>
+          <p className="eyebrow">Control previo al traspaso</p>
+          <h3>Informe de revisión del expediente</h3>
+          <p>Consolida el estado documental, el análisis de causa y el cálculo que el handler está proponiendo para la siguiente etapa.</p>
+        </div>
+        <div className="review-report-actions">
+          <label className="field-label" htmlFor="review-destination">Destino</label>
+          <select
+            id="review-destination"
+            className="input"
+            disabled={!canWrite}
+            value={destination}
+            onChange={(event) => setDestination(event.target.value as TransferDestination)}
+          >
+            <option value="FIS">FIS · recupero extrajudicial</option>
+            <option value="Logistic">Logistic · recupero judicial</option>
+          </select>
+          <button className="button-primary" type="button" disabled={!canWrite} onClick={generate}>
+            <FileCheck2 size={17} /> Generar informe
+          </button>
+          {report && (
+            <button className="button-secondary" type="button" onClick={download}>
+              <Download size={17} /> Descargar
+            </button>
+          )}
+        </div>
+      </section>
+
+      {report ? (
+        <ReviewReportContent report={report} />
+      ) : (
+        <section className="panel review-report-empty">
+          <FileCheck2 size={28} />
+          <strong>Aún no hay un informe generado</strong>
+          <p>Selecciona el destino y genera el informe para dejar registrada la revisión previa al traspaso.</p>
+        </section>
+      )}
+
+      <section className="panel review-report-sources">
+        <div className="panel-title">
+          <h3>Fuentes del informe</h3>
+          <span>{docs.length} documentos · {calculo ? "cálculo disponible" : "sin cálculo"}</span>
+        </div>
+        <p>El contenido se construye con la ficha del caso, el inventario documental, el análisis confirmado y el último cálculo guardado.</p>
+      </section>
+    </section>
+  );
+}
+
+function ReviewReportContent({ report, compact = false }: { report: ReviewReport; compact?: boolean }) {
+  const availableCount = report.availableDocuments.length;
+  const pendingCount = report.pendingActions.length;
+  return (
+    <section className={cx("review-report", compact && "compact")}>
+      <div className="review-report-heading">
+        <div>
+          <p className="eyebrow">Derivación a {report.destination}</p>
+          <h3>Revisión {report.ready ? "aprobada" : "con observaciones"}</h3>
+          <p>Generado por {report.generatedBy} · {new Date(report.generatedAt).toLocaleString("es-CL")}</p>
+        </div>
+        <StatusPill label={report.status} tone={report.ready ? "ok" : "warn"} />
+      </div>
+
+      <div className="review-report-summary">
+        <strong>Resumen ejecutivo</strong>
+        <p>{report.executiveSummary}</p>
+      </div>
+
+      <div className="review-report-metrics">
+        <div><span>Documentos disponibles</span><strong>{availableCount}</strong></div>
+        <div><span>Documentos pendientes</span><strong>{report.missingDocuments.length}</strong></div>
+        <div><span>Acciones pendientes</span><strong>{pendingCount}</strong></div>
+        <div><span>Mérito preliminar</span><strong>{report.preliminaryMerit || "Pendiente"}</strong></div>
+      </div>
+
+      {!compact && (
+        <div className="review-report-grid">
+          <div className="review-report-section">
+            <h4>Causa propuesta</h4>
+            <p>{report.recommendedCause || "Pendiente de confirmación humana."}</p>
+            <small>Sustento: {report.causeSources.length > 0 ? report.causeSources.join(", ") : "No informado"}</small>
+          </div>
+          <div className="review-report-section">
+            <h4>Cálculo seleccionado</h4>
+            <p>{report.selectedCalculation?.method || "Pendiente de selección"}</p>
+            <strong>
+              {report.selectedCalculation?.amount !== undefined
+                ? `${report.selectedCalculation.currency || "USD"} ${report.selectedCalculation.amount.toLocaleString("es-CL")}`
+                : "Sin monto final"}
+            </strong>
+            {report.selectedCalculation?.justification && <small>{report.selectedCalculation.justification}</small>}
+          </div>
+        </div>
+      )}
+
+      <div className="review-report-columns">
+        <div>
+          <h4>Documentación disponible</h4>
+          <ul>
+            {report.availableDocuments.length > 0 ? report.availableDocuments.map((item) => <li key={item}>{item}</li>) : <li>Ningún documento registrado</li>}
+          </ul>
+        </div>
+        <div>
+          <h4>{report.pendingActions.length > 0 ? "Pendientes para cerrar" : "Pendientes"}</h4>
+          <ul>
+            {report.pendingActions.length > 0 ? report.pendingActions.map((item) => <li key={item}>{item}</li>) : <li>Ninguno</li>}
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function HistoryTab({ events }: { events: ReturnType<typeof useDemoStore.getState>["bitacora"] }) {
   return (
     <section className="panel">
@@ -1416,12 +1966,12 @@ function ManualPage() {
     {
       title: "4. Nuevo caso",
       body:
-        "Formulario de alta manual. Guardar borrador permite datos incompletos; Guardar y continuar exige handler, asegurado, oponente, nave, fecha de descarga y jurisdicción."
+        "Puedes iniciar el caso cargando una carpeta documental o completando el formulario. La carpeta propone referencia, handler, datos del embarque, tipo de caso, resumen y causa; el handler revisa y corrige antes de guardar."
     },
     {
       title: "5. Documentos y checklist",
       body:
-        "Permite cargar múltiples archivos, sugiere tipo documental por nombre y deja corregirlo manualmente. Solo guarda metadata, nunca binarios ni base64. El checklist se actualiza en tiempo real."
+        "Permite cargar múltiples archivos o una carpeta, leer contenido compatible, ejecutar OCR bajo demanda para PDFs escaneados, sugerir tipo documental y extraer datos para revisión humana. La carga de una carpeta completa evita duplicar entradas ya presentes en el expediente. Nunca guarda binarios ni base64."
     },
     {
       title: "6. Análisis de causa de daño",
@@ -1431,12 +1981,12 @@ function ManualPage() {
     {
       title: "7. Cálculo de pérdida",
       body:
-        "Muestra tres métodos en paralelo: SMV, Reporte de mercado y Factura vs. venta bruta. Permite venta a firme, rubros adicionales y exige justificación mínima para guardar un método seleccionado."
+        "Muestra tres métodos en paralelo: SMV, Reporte de mercado y Factura vs. venta bruta. Si los documentos contienen valores comparables, presenta una propuesta preliminar con fuentes para cargarla como base editable. Permite venta a firme, rubros adicionales y exige justificación mínima para guardar un método seleccionado."
     },
     {
       title: "8. Seguimiento e historial",
       body:
-        "Registra cambios de estado, documentos, cálculos, cartas y reversiones con timestamp automático no editable. La reversión de estado solo está disponible para Gerente/CEO con motivo obligatorio."
+        "Registra cambios de estado, documentos, cálculos, cartas y reversiones con timestamp automático no editable. La reversión de estado solo está disponible para Gerente con motivo obligatorio."
     },
     {
       title: "9. Alertas de prescripción",
@@ -1452,6 +2002,11 @@ function ManualPage() {
       title: "11. Benchmark por handler",
       body:
         "Vista gerencial que compara por handler los casos totales, documentación pendiente, alertas activas, casos sin movimiento, cobertura documental promedio y cálculos completos."
+    },
+    {
+      title: "12. Informe de revisión y traspaso",
+      body:
+        "Desde la pestaña Informe, el handler selecciona FIS para recupero extrajudicial o Logistic para recupero judicial y genera un resumen con documentación disponible y pendiente, causa propuesta, mérito preliminar y cálculo seleccionado. El informe queda en el historial, se puede descargar y debe revisarse antes de confirmar el traspaso. Si aún existen pendientes, el sistema los muestra como observaciones explícitas."
     }
   ];
   const roleGuides = [
@@ -1501,7 +2056,8 @@ function ManualPage() {
               <li>Revisar checklist y copiar solicitud de faltantes.</li>
               <li>Confirmar análisis de causa.</li>
               <li>Guardar cálculo con método seleccionado y justificación.</li>
-              <li>Avanzar estado y generar carta.</li>
+              <li>Generar el informe de revisión, seleccionar destino FIS o Logistic y revisar las observaciones.</li>
+              <li>Confirmar el traspaso y, si corresponde, generar la carta.</li>
               <li>Cambiar a Gerente para revisar dashboard, benchmark, alertas y reversión.</li>
             </ol>
           </div>
