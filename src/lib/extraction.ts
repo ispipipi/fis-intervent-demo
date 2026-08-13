@@ -1,4 +1,5 @@
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
+import pdfWorker from "pdfjs-dist/legacy/build/pdf.worker.mjs?url";
 import * as XLSX from "xlsx";
 import { classifyDocument } from "./business";
 import { DocumentType, ExtractedCaseData, ExtractedLossProposal, UploadDraft } from "../types/domain";
@@ -6,6 +7,50 @@ import { DocumentType, ExtractedCaseData, ExtractedLossProposal, UploadDraft } f
 const MAX_TEXT_LENGTH = 18_000;
 const REFERENCE_PATTERN = /PRE-FIS-[A-Z0-9]+-\d{4}-\d{2}-\d{4}/gi;
 const CLAIM_PATTERN = /CS-\d{4}-\d{3,}/i;
+const INLINE_VALUE_BOUNDARIES = [
+  "REFERENCE NO",
+  "CS CLAIM NO",
+  "ASEGURADO",
+  "CONTRAPARTE",
+  "NAVE / VIAJE",
+  "DESCARGA",
+  "EMBARQUE",
+  "SHIPPER",
+  "CONSIGNEE",
+  "PORT OF LOADING",
+  "PORT OF DISCHARGE",
+  "ORIGEN",
+  "ORIGIN",
+  "DESTINATION",
+  "CARGO",
+  "PRODUCT",
+  "DESCRIPTION",
+  "SERVICE",
+  "ROUTING AND MILESTONES",
+  "PACKAGES",
+  "LOT",
+  "GROSS WEIGHT",
+  "SELLER",
+  "PRINCIPAL",
+  "REPRESENTATIVE",
+  "CURRENCY",
+  "ANALYSIS BASIS",
+  "SELECTED BASIS",
+  "MONTO PRELIMINAR",
+  "CAUSA REPORTADA",
+  "DECLARED CLAIM EXPOSURE",
+  "INDICATIVE FINAL CLAIM",
+  "INDICATIVE CLAIM",
+  "SUBTOTAL",
+  "INSPECTOR",
+  "SURVEYOR",
+  "INSPECTION DATE",
+  "LOCATION",
+  "LA PRESENTE",
+  "ESTE DOCUMENTO"
+];
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 function clean(value?: string) {
   return value?.replace(/\s+/g, " ").replace(/[|]+/g, " ").trim() || undefined;
@@ -16,6 +61,22 @@ function firstMatch(text: string, pattern: RegExp) {
 }
 
 function findLabelValue(text: string, labels: string[]) {
+  const normalizedText = clean(text) || "";
+  const searchableText = normalizedText.toLowerCase();
+  let foundLabel = false;
+  for (const label of labels) {
+    const labelStart = searchableText.indexOf(label.toLowerCase());
+    if (labelStart < 0) continue;
+    foundLabel = true;
+    const valueStart = labelStart + label.length;
+    const boundaryStarts = INLINE_VALUE_BOUNDARIES
+      .map((boundary) => searchableText.indexOf(boundary.toLowerCase(), valueStart))
+      .filter((index) => index >= valueStart);
+    const valueEnd = boundaryStarts.length ? Math.min(...boundaryStarts) : normalizedText.length;
+    const inlineValue = clean(normalizedText.slice(valueStart, valueEnd).replace(/^[\s,:;|\-]+/, ""));
+    if (inlineValue) return inlineValue;
+  }
+  if (foundLabel) return undefined;
   const lines = text.split(/\r?\n/).map((line) => clean(line)).filter(Boolean) as string[];
   const normalizedLabels = labels.map((label) => label.toLowerCase());
   for (let index = 0; index < lines.length; index += 1) {
@@ -101,7 +162,9 @@ function extractVesselAndVoyage(value?: string) {
 
 function extractPlaceAndDate(value?: string) {
   if (!value) return {};
-  return { place: clean(value.split("/")[0]), date: extractDate(value) };
+  const place = clean(value.split("/")[0]);
+  if (!place || /^(and|and destination|y|y destino)$/i.test(place)) return {};
+  return { place, date: extractDate(value) };
 }
 
 function detectCause(text: string, type: DocumentType) {
@@ -122,8 +185,8 @@ export function extractCaseData(text: string, fileName: string, type: DocumentTy
   const opponent = findLabelValue(normalizedText, ["Contraparte", "Transportista", "Carrier", "Opponent"]);
   const vesselAndVoyage = extractVesselAndVoyage(findLabelValue(normalizedText, ["Nave / viaje", "Vessel / voyage"]));
   const discharge = extractPlaceAndDate(findLabelValue(normalizedText, ["Descarga", "Port of discharge"]));
-  const shipment = extractPlaceAndDate(findLabelValue(normalizedText, ["Embarque", "Port of loading", "Origen"]));
-  const cargo = findLabelValue(normalizedText, ["Tipo de carga", "Cargo", "Description"]);
+  const shipment = extractPlaceAndDate(findLabelValue(normalizedText, ["Port of loading", "Origin", "Origen"]));
+  const cargo = findLabelValue(normalizedText, ["Tipo de carga", "Product", "Cargo", "Description"]);
   const cause = findLabelValue(normalizedText, ["Causa reportada", "Cause", "Causa"]);
   const amount = findLabelValue(normalizedText, ["Monto preliminar", "Claim amount", "Declared claim exposure", "Indicative final claim", "Indicative claim"]);
   const surveyor = findLabelValue(normalizedText, ["Inspector", "Surveyor", "Officer"]);
@@ -199,15 +262,30 @@ async function ocrPdf(pdfDocument: Awaited<ReturnType<typeof pdfjsLib.getDocumen
 
 async function readPdf(file: File): Promise<ReadContentResult> {
   const data = new Uint8Array(await file.arrayBuffer());
-  const pdfDocument = await pdfjsLib.getDocument({ data, disableWorker: true, useWorkerFetch: false, isEvalSupported: false } as never).promise;
-  const pages: string[] = [];
-  for (let pageNumber = 1; pageNumber <= pdfDocument.numPages; pageNumber += 1) {
-    const page = await pdfDocument.getPage(pageNumber);
-    const content = await page.getTextContent();
-    pages.push(content.items.map((item) => ("str" in item ? item.str : "")).join(" "));
+  let pdfDocument: Awaited<ReturnType<typeof pdfjsLib.getDocument>>["promise"] extends Promise<infer PdfDocument> ? PdfDocument : never;
+  try {
+    pdfDocument = await pdfjsLib.getDocument({
+      data,
+      disableWorker: true,
+      useWorkerFetch: false,
+      isEvalSupported: false,
+      disableFontFace: true
+    } as never).promise;
+  } catch {
+    return { text: "", ocrUsed: false };
   }
-  const text = pages.join("\n").slice(0, MAX_TEXT_LENGTH);
-  if (text.trim()) return { text, ocrUsed: false };
+  try {
+    const pages: string[] = [];
+    for (let pageNumber = 1; pageNumber <= pdfDocument.numPages; pageNumber += 1) {
+      const page = await pdfDocument.getPage(pageNumber);
+      const content = await page.getTextContent();
+      pages.push(content.items.map((item) => ("str" in item ? item.str : "")).join(" "));
+    }
+    const text = pages.join("\n").slice(0, MAX_TEXT_LENGTH);
+    if (text.trim()) return { text, ocrUsed: false };
+  } catch {
+    // Some PDFs fail during text-layer extraction even though their pages can be rendered.
+  }
   let ocrText = "";
   try {
     ocrText = await ocrPdf(pdfDocument);
@@ -252,6 +330,7 @@ export async function processDocumentFiles(files: File[]): Promise<UploadDraft[]
         originalName: file.name,
         tipoDocumento,
         relativePath: (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name,
+        datosExtraidos: extractCaseData("", file.name, tipoDocumento),
         estadoExtraccion: "parcial"
       } satisfies UploadDraft;
     }
@@ -261,10 +340,32 @@ export async function processDocumentFiles(files: File[]): Promise<UploadDraft[]
 export function mergeExtractedData(drafts: UploadDraft[], fallbackReference: string): ExtractedCaseData {
   const data = drafts.map((draft) => draft.datosExtraidos).filter(Boolean) as ExtractedCaseData[];
   const first = <K extends keyof ExtractedCaseData>(key: K) => data.map((item) => item[key]).find((value) => value !== undefined && value !== "") as ExtractedCaseData[K] | undefined;
+  const textValues = (key: keyof ExtractedCaseData) => data
+    .map((item) => item[key])
+    .filter((value): value is string => typeof value === "string" && Boolean(value.trim()));
+  const assured = first("assured");
+  const opponent = first("opponent");
+  const vessel = first("vessel");
+  const voyage = first("voyage");
+  const cargoCandidates = textValues("cargo");
+  const cargo = cargoCandidates
+    .filter((value) => value.length <= 100 && !/manifest|packaging materials|customs control|reference no/i.test(value))
+    .sort((left, right) => left.length - right.length)[0] || cargoCandidates[0];
+  const shipmentCandidates = textValues("placeOfShipment");
+  const placeOfShipment = shipmentCandidates.sort((left, right) => right.length - left.length)[0];
+  const placeOfDischarge = first("placeOfDischarge");
+  const dateOfDischarge = first("dateOfDischarge");
   const sources = [...new Set(data.flatMap((item) => item.fuentesCausa || []))];
   const references = [...new Set(data.flatMap((item) => item.referenciasDetectadas || []))];
   const prioritized = data.find((item) => item.tipoCaso === "Daño de temperatura" || item.tipoCaso === "Daño de condición o manipulación") || data[0];
-  const summary = data.map((item) => item.resumenCaso).filter(Boolean).sort((left, right) => (right?.length || 0) - (left?.length || 0))[0];
+  const summaryParts = [
+    assured && `El asegurado ${assured}`,
+    opponent && `presenta antecedentes frente a ${opponent}`,
+    cargo && `por carga identificada como ${cargo}`,
+    vessel && `transportada en ${vessel}${voyage ? `, viaje ${voyage}` : ""}`,
+    placeOfDischarge && `con descarga en ${placeOfDischarge}${dateOfDischarge ? ` el ${dateOfDischarge}` : ""}`
+  ].filter(Boolean);
+  const summary = summaryParts.length ? `${summaryParts.join(" ")}.` : first("resumenCaso");
   const lossDrafts = drafts
     .filter((draft) => draft.datosExtraidos?.propuestaPerdida)
     .sort((left, right) => (left.tipoDocumento === "Liquidación por contenedor" ? -1 : 0) - (right.tipoDocumento === "Liquidación por contenedor" ? -1 : 0));
@@ -287,15 +388,15 @@ export function mergeExtractedData(drafts: UploadDraft[], fallbackReference: str
   return {
     referencia: first("referencia") || references[0] || fallbackReference,
     csClaimNo: first("csClaimNo"),
-    assured: first("assured"),
-    opponent: first("opponent"),
-    vessel: first("vessel"),
+    assured,
+    opponent,
+    vessel,
     voyage: first("voyage"),
-    cargo: first("cargo"),
-    placeOfShipment: first("placeOfShipment"),
+    cargo,
+    placeOfShipment,
     dateOfShipment: first("dateOfShipment"),
-    placeOfDischarge: first("placeOfDischarge"),
-    dateOfDischarge: first("dateOfDischarge"),
+    placeOfDischarge,
+    dateOfDischarge,
     surveyor: first("surveyor"),
     claimAmount: first("claimAmount"),
     tipoCaso: prioritized?.tipoCaso || first("tipoCaso"),
