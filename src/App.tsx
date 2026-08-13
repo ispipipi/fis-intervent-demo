@@ -66,6 +66,7 @@ const STATUS_LABELS: CaseStatus[] = [
   "Traspasado a FIS",
   "Traspasado a Logistic"
 ];
+const COMPANY_LOGO_SRC = `${import.meta.env.BASE_URL}logo.svg`;
 
 function cx(...classes: Array<string | false | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -178,7 +179,7 @@ function RoleSelectorPage() {
       <main className="role-gate-shell">
         <section className="role-gate-intro">
           <div className="company-brand-card">
-            <img src="/logo.svg" alt="Logo de la empresa" />
+            <img src={COMPANY_LOGO_SRC} alt="Logo de la empresa" />
             <span>Intervent Preclaim</span>
           </div>
           <div className="role-gate-copy">
