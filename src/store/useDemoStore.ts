@@ -9,7 +9,10 @@ import {
   DocumentType,
   Documento,
   NewCaseInput,
-  SessionUser
+  ReviewReport,
+  SessionUser,
+  TransferDestination,
+  UploadDraft
 } from "../types/domain";
 import {
   buildCasoFromInput,
@@ -19,11 +22,7 @@ import {
   renamedFile,
   STORAGE_PREFIX
 } from "../lib/business";
-
-type UploadDraft = {
-  originalName: string;
-  tipoDocumento: DocumentType;
-};
+import { buildReviewReport } from "../lib/review";
 
 type DemoState = {
   usuario: SessionUser;
@@ -39,6 +38,7 @@ type DemoState = {
   removeDocument: (documentId: string) => void;
   saveAnalysis: (casoId: string, analysis: DamageAnalysis) => void;
   saveCalculation: (calculation: CalculoPerdida) => { ok: boolean; error?: string };
+  generateReviewReport: (casoId: string, destination: TransferDestination) => ReviewReport | undefined;
   transitionCase: (casoId: string, nextStatus: CaseStatus, detail: string) => void;
   revertCase: (casoId: string, previousStatus: CaseStatus, reason: string) => { ok: boolean; error?: string };
   registerLetter: (casoId: string, detail: string) => void;
@@ -225,16 +225,29 @@ export const useDemoStore = create<DemoState>()(
         return caso;
       },
       updateCase: (casoId, patch) => {
+        const nowIso = new Date().toISOString();
         set((state) => ({
           casos: state.casos.map((caso) =>
             caso.id === casoId
               ? {
                   ...caso,
                   ...patch,
-                  fechaPrescripcion: calculatePrescription(patch.dateOfDischarge ?? caso.dateOfDischarge, patch.jurisdiccion ?? caso.jurisdiccion)
+                  fechaPrescripcion: calculatePrescription(patch.dateOfDischarge ?? caso.dateOfDischarge, patch.jurisdiccion ?? caso.jurisdiccion),
+                  ultimaActualizacion: nowIso
                 }
               : caso
-          )
+          ),
+          bitacora: [
+            {
+              id: crypto.randomUUID(),
+              casoId,
+              timestamp: nowIso,
+              tipoEvento: "extraccion_revisada",
+              detalle: "Datos extraídos de documentos revisados y aplicados por el handler.",
+              usuario: state.usuario.nombre
+            },
+            ...state.bitacora
+          ]
         }));
       },
       prepareUpload: (files) =>
@@ -243,18 +256,45 @@ export const useDemoStore = create<DemoState>()(
           tipoDocumento: classifyDocument(file.name)
         })),
       confirmUpload: (casoId, drafts) => {
-        const caso = get().casos.find((item) => item.id === casoId);
+        const state = get();
+        const caso = state.casos.find((item) => item.id === casoId);
         if (!caso) return;
         const nowIso = new Date().toISOString();
-        const docs: Documento[] = drafts.map((draft) => ({
-          id: crypto.randomUUID(),
-          casoId,
-          tipoDocumento: draft.tipoDocumento,
-          nombreArchivo: renamedFile(casoId, draft.tipoDocumento, draft.originalName),
-          pathMock: `mock://docs/${casoId}/${renamedFile(casoId, draft.tipoDocumento, draft.originalName)}`,
-          disponible: true,
-          fechaCarga: nowIso
-        }));
+        const currentDocs = state.documentos.filter((item) => item.casoId === casoId);
+        const draftKeys = new Set<string>();
+        const docs: Documento[] = drafts
+          .filter((draft) => {
+            const renamed = renamedFile(casoId, draft.tipoDocumento, draft.originalName);
+            const exactKey = draft.relativePath || draft.originalName;
+            if (draftKeys.has(exactKey)) return false;
+            draftKeys.add(exactKey);
+            return !currentDocs.some((doc) => {
+              if (doc.relativePath && draft.relativePath) return doc.relativePath === draft.relativePath;
+              if (doc.originalName) return doc.originalName === draft.originalName;
+              if (doc.nombreArchivo === renamed) return true;
+              // Seeded demo documents predate originalName/relativePath. Avoid duplicating
+              // their checklist entry when a complete folder is uploaded afterward.
+              return !doc.relativePath && !doc.originalName && doc.tipoDocumento === draft.tipoDocumento;
+            });
+          })
+          .map((draft) => {
+            const nombreArchivo = renamedFile(casoId, draft.tipoDocumento, draft.originalName);
+            return {
+              id: crypto.randomUUID(),
+              casoId,
+              tipoDocumento: draft.tipoDocumento,
+              nombreArchivo,
+              originalName: draft.originalName,
+              pathMock: `mock://docs/${casoId}/${nombreArchivo}`,
+              disponible: true,
+              fechaCarga: nowIso,
+              relativePath: draft.relativePath,
+              textoExtraido: draft.textoExtraido,
+              datosExtraidos: draft.datosExtraidos,
+              ocrUsado: draft.ocrUsado
+            };
+          });
+        if (docs.length === 0) return;
         set((state) => ({
           documentos: [...docs, ...state.documentos],
           bitacora: [
@@ -322,6 +362,37 @@ export const useDemoStore = create<DemoState>()(
         }));
         return { ok: true };
       },
+      generateReviewReport: (casoId, destination) => {
+        const state = get();
+        const caso = state.casos.find((item) => item.id === casoId);
+        if (!caso) return undefined;
+        const calculo = state.calculosPerdida.find((item) => item.casoId === casoId);
+        const report = buildReviewReport(
+          caso,
+          state.documentos.filter((item) => item.casoId === casoId),
+          calculo,
+          state.usuario.nombre,
+          destination
+        );
+        const nowIso = new Date().toISOString();
+        set((current) => ({
+          casos: current.casos.map((item) =>
+            item.id === casoId ? { ...item, informeRevision: report, ultimaActualizacion: nowIso } : item
+          ),
+          bitacora: [
+            {
+              id: crypto.randomUUID(),
+              casoId,
+              timestamp: nowIso,
+              tipoEvento: "informe_generado",
+              detalle: `Informe de revisión generado para derivación a ${destination}. Estado: ${report.status}.`,
+              usuario: current.usuario.nombre
+            },
+            ...current.bitacora
+          ]
+        }));
+        return report;
+      },
       transitionCase: (casoId, nextStatus, detail) => {
         const nowIso = new Date().toISOString();
         set((state) => ({
@@ -343,7 +414,7 @@ export const useDemoStore = create<DemoState>()(
       },
       revertCase: (casoId, previousStatus, reason) => {
         const { usuario } = get();
-        if (usuario.role === "Handler") return { ok: false, error: "Solo Gerente o CEO pueden revertir estados." };
+        if (usuario.role !== "Gerente") return { ok: false, error: "Solo Gerente puede revertir estados en este demo." };
         if (reason.trim().length < 10) return { ok: false, error: "El motivo de reversión debe tener al menos 10 caracteres." };
         const nowIso = new Date().toISOString();
         set((state) => ({

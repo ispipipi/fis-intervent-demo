@@ -3,3 +3,5 @@ dist
 .DS_Store
 .env
 .env.local
+__pycache__/
+test-fixtures/intervent-preclaim-test-cases/

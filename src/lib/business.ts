@@ -13,6 +13,14 @@ export const STORAGE_PREFIX = "fis-intervent-demo:";
 
 export const HANDLERS = ["Emely Lambraño", "Camila Rojas", "Mateo Silva"];
 
+export function suggestHandler(assured?: string) {
+  const normalized = assured?.toLowerCase() || "";
+  if (normalized.includes("agroexport") || normalized.includes("exportadora")) return "Emely Lambraño";
+  if (normalized.includes("frutera") || normalized.includes("fruta")) return "Camila Rojas";
+  if (normalized.includes("demo") || normalized.includes("comercial")) return "Mateo Silva";
+  return undefined;
+}
+
 export const DOCUMENT_TYPES: DocumentType[] = [
   "Carta de notificación a la naviera",
   "AoR",
@@ -33,25 +41,39 @@ export const DOCUMENT_TYPES: DocumentType[] = [
   "Registros de termógrafos"
 ];
 
+function normalizeDocumentText(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[_\-.]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 const DOCUMENT_ALIASES = [
-  { type: "Carta de notificación a la naviera", aliases: ["notificacion", "notice", "carrier letter", "naviera"] },
+  { type: "Carta de notificación a la naviera", aliases: ["carta de notificacion", "notificacion", "notice", "carrier letter", "naviera"] },
   { type: "AoR", aliases: ["aor", "appointment", "authority"] },
-  { type: "Carta de subrogación o LoA", aliases: ["subrogacion", "subrogation", "loa", "letter of authority"] },
+  { type: "Carta de subrogación o LoA", aliases: ["carta de subrogacion", "subrogacion", "subrogation", "loa", "letter of authority"] },
   { type: "BL", aliases: ["bl", "bill of lading", "b/l", "conocimiento"] },
   { type: "Booking", aliases: ["booking", "reserva"] },
-  { type: "Factura de exportación", aliases: ["factura", "invoice", "export invoice"] },
+  { type: "Factura de exportación", aliases: ["factura de exportacion", "factura", "invoice", "export invoice"] },
   { type: "DUS", aliases: ["dus", "declaracion unica"] },
   { type: "Packing List", aliases: ["packing", "packing list", "lista empaque"] },
   { type: "Certificado fitosanitario", aliases: ["fitosanitario", "phytosanitary", "phyto"] },
   { type: "Certificado de origen", aliases: ["origen", "origin certificate"] },
-  { type: "Liquidaciones comparativas o informe de mercado", aliases: ["market", "freshtech", "usda", "comparativa", "liquidacion comparativa"] },
-  { type: "Liquidación por contenedor", aliases: ["liquidacion contenedor", "container settlement", "settlement"] },
+  { type: "Liquidaciones comparativas o informe de mercado", aliases: ["liquidaciones comparativas", "informe de mercado", "informe mercado", "market", "freshtech", "usda", "comparativa", "liquidacion comparativa"] },
+  { type: "Liquidación por contenedor", aliases: ["liquidacion por contenedor", "liquidacion contenedor", "container settlement", "settlement"] },
   { type: "Tracking (naviera)", aliases: ["tracking", "trace", "naviera tracking"] },
   { type: "Informes de QC en origen y destino", aliases: ["qc", "quality control", "origen destino"] },
   { type: "Reportes de inspección", aliases: ["inspection", "survey", "reporte inspeccion", "inspeccion"] },
   { type: "Certificado de cosecha", aliases: ["cosecha", "harvest"] },
   { type: "Registros de termógrafos", aliases: ["termografo", "thermograph", "temperature", "temperatura", "logger"] }
 ] as const;
+
+const DIRECT_DOCUMENT_ALIASES = DOCUMENT_ALIASES.flatMap((entry) =>
+  entry.aliases.map((alias) => ({ type: entry.type as DocumentType, alias: normalizeDocumentText(alias) }))
+).sort((left, right) => right.alias.length - left.alias.length);
 
 const fuse = new Fuse(
   DOCUMENT_ALIASES.flatMap((entry) =>
@@ -74,9 +96,13 @@ export const STATUS_SEQUENCE: CaseStatus[] = [
 ];
 
 export function classifyDocument(fileName: string): DocumentType {
-  const normalized = fileName.toLowerCase().replace(/[_\-.]+/g, " ");
+  const normalized = normalizeDocumentText(fileName);
   const exactBl = /\b(b\/l|bl|bill of lading)\b/.test(normalized);
+  const qcReport = /\b(qc|quality control)\b/.test(normalized) && /\b(origen|destino)\b/.test(normalized);
   if (exactBl) return "BL";
+  if (qcReport) return "Informes de QC en origen y destino";
+  const directMatch = DIRECT_DOCUMENT_ALIASES.find((entry) => normalized.includes(entry.alias));
+  if (directMatch) return directMatch.type;
   const result = fuse.search(normalized)[0];
   return result && (result.score ?? 1) < 0.35 ? result.item.type : "Sin clasificar";
 }
@@ -181,6 +207,9 @@ export function buildCasoFromInput(input: NewCaseInput, index: number, complete:
     opponent: input.opponent || "",
     vessel: input.vessel || "",
     voyage: input.voyage,
+    cargo: input.cargo,
+    placeOfShipment: input.placeOfShipment,
+    dateOfShipment: input.dateOfShipment,
     placeOfDischarge: input.placeOfDischarge,
     dateOfDischarge: input.dateOfDischarge,
     surveyor: input.surveyor,
@@ -188,6 +217,11 @@ export function buildCasoFromInput(input: NewCaseInput, index: number, complete:
     jurisdiccion: input.jurisdiccion,
     fechaPrescripcion: calculatePrescription(input.dateOfDischarge, input.jurisdiccion),
     causaDano: input.causaDano,
+    tipoCaso: input.tipoCaso,
+    resumenCaso: input.resumenCaso,
+    causaPotencial: input.causaPotencial,
+    fuentesCausa: input.fuentesCausa,
+    propuestaPerdida: input.propuestaPerdida,
     estado: complete && hasRequiredMinimum(input) ? "Preclaim" : "Datos incompletos",
     ultimaActualizacion: now,
     createdAt: now
