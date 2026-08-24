@@ -26,6 +26,7 @@ import {
 } from "../lib/business";
 import { buildReviewReport } from "../lib/review";
 import { loadHistoryStore, saveHistoryBatch } from "../lib/historyStorage";
+import { loadBundledHistory } from "../lib/historySeed";
 
 type DemoState = {
   usuario: SessionUser;
@@ -484,7 +485,23 @@ export const useDemoStore = create<DemoState>()(
         set({ historicoCargando: true });
         try {
           const stored = await loadHistoryStore();
-          set({ historico: stored.records, ultimaImportacionHistorico: stored.latest });
+          if (stored.records.length > 0) {
+            set({ historico: stored.records, ultimaImportacionHistorico: stored.latest });
+            return;
+          }
+          const bundled = await loadBundledHistory();
+          await saveHistoryBatch(bundled.batch, bundled.sourceFile);
+          set({
+            historico: bundled.batch.records,
+            ultimaImportacionHistorico: {
+              batchId: bundled.batch.batchId,
+              fileName: bundled.batch.fileName,
+              importedAt: bundled.batch.importedAt,
+              records: bundled.batch.records.length,
+              sheets: bundled.batch.sheets,
+              duplicateReferenceKeys: bundled.batch.duplicateReferenceKeys
+            }
+          });
         } catch {
           set({ historico: [], ultimaImportacionHistorico: undefined });
         } finally {

@@ -2208,7 +2208,7 @@ function ManualPage() {
     {
       title: "13. Memoria histórica",
       body:
-        "Permite importar el historial completo desde Excel. Conserva todos los registros de origen, hoja, fila, valores originales y referencias repetidas. La memoria se puede buscar y filtrar, pero no modifica los casos activos ni permite editar directamente el registro histórico."
+        "La memoria se precarga automáticamente con el historial incluido en el demo. También permite importar otro Excel si se necesita ampliar la historia. Conserva los registros reconocibles, su hoja, fila, campos identificados y referencias repetidas. La memoria se puede buscar y filtrar, pero no modifica los casos activos ni permite editar directamente el registro histórico."
     }
   ];
   const roleGuides = [
