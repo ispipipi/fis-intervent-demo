@@ -77,6 +77,50 @@ export type Caso = {
   analisisCausa?: DamageAnalysis;
 };
 
+export type HistoricalCategory = "Preclaim" | "FIS" | "Presentar" | "Traspasado" | "Descartado" | "Histórico";
+
+export type HistoricalCase = {
+  id: string;
+  reference: string;
+  referenceKey: string;
+  legacyStatus?: string;
+  missingDocumentsRaw?: string;
+  incidentSummaryRaw?: string;
+  claimHandler?: string;
+  csClaimNo?: string;
+  assured?: string;
+  opponent?: string;
+  vessel?: string;
+  voyage?: string;
+  placeOfDischarge?: string;
+  dateOfDischarge?: string;
+  dateOfLoading?: string;
+  surveyor?: string;
+  commodity?: string;
+  claimAmount?: number;
+  category: HistoricalCategory;
+  sourceSheet: string;
+  sourceRow: number;
+  sourceBatchId: string;
+  importedAt: string;
+};
+
+export type HistorySheetSummary = {
+  sheetName: string;
+  headerRow: number;
+  importedRows: number;
+  skippedRows: number;
+};
+
+export type HistoryImportBatch = {
+  batchId: string;
+  fileName: string;
+  importedAt: string;
+  records: HistoricalCase[];
+  sheets: HistorySheetSummary[];
+  duplicateReferenceKeys: string[];
+};
+
 export type Documento = {
   id: string;
   casoId: string;

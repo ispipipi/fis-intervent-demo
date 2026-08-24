@@ -1,4 +1,4 @@
-import { ChangeEvent, DragEvent, FormEvent, useMemo, useState } from "react";
+import { ChangeEvent, DragEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   AlertTriangle,
@@ -39,7 +39,8 @@ import {
   ExtractedLossProposal,
   ReviewReport,
   TransferDestination,
-  UploadDraft
+  UploadDraft,
+  HistoricalCase
 } from "./types/domain";
 import { mergeExtractedData, processDocumentFiles } from "./lib/extraction";
 import { buildReviewReportText } from "./lib/review";
@@ -112,6 +113,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
           <nav className="app-nav hidden items-center gap-1 md:flex">
             <NavLink to="/dashboard" icon={<LayoutDashboard size={18} />} label="Dashboard" />
             <NavLink to="/casos" icon={<ClipboardList size={18} />} label="Casos" />
+            <NavLink to="/historial" icon={<History size={18} />} label="Memoria" />
             {usuario.role === "Handler" && <NavLink to="/casos/nuevo" icon={<Plus size={18} />} label="Nuevo caso" />}
             {usuario.role !== "Handler" && <NavLink to="/benchmark" icon={<BarChart3 size={18} />} label="Benchmark" />}
             <NavLink to="/manual" icon={<HelpCircle size={18} />} label="Manual" />
@@ -629,6 +631,200 @@ function CasesPage() {
       </div>
     </AppShell>
   );
+}
+
+function HistoricalMemoryPage() {
+  const { historico, ultimaImportacionHistorico, historicoCargando, importHistoricalCases, hydrateHistoricalCases } = useDemoStore();
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("Todos");
+  const [selectedId, setSelectedId] = useState<string>();
+  const [isImporting, setIsImporting] = useState(false);
+  const [importError, setImportError] = useState("");
+  const [importNotice, setImportNotice] = useState("");
+  const duplicateKeys = new Set(
+    [...historico.reduce((counts, record) => counts.set(record.referenceKey, (counts.get(record.referenceKey) || 0) + 1), new Map<string, number>())]
+      .filter(([, count]) => count > 1)
+      .map(([referenceKey]) => referenceKey)
+  );
+  useEffect(() => {
+    void hydrateHistoricalCases();
+  }, [hydrateHistoricalCases]);
+  const filtered = historico.filter((record) => {
+    const haystack = [
+      record.reference,
+      record.claimHandler,
+      record.assured,
+      record.opponent,
+      record.vessel,
+      record.voyage,
+      record.csClaimNo,
+      record.incidentSummaryRaw,
+      record.missingDocumentsRaw
+    ].join(" ").toLowerCase();
+    return haystack.includes(query.toLowerCase()) && (category === "Todos" || record.category === category);
+  });
+  const selected = historico.find((record) => record.id === selectedId);
+
+  const importFile = async (file?: File) => {
+    if (!file) return;
+    setIsImporting(true);
+    setImportError("");
+    setImportNotice("");
+    try {
+      const { parseHistoryWorkbook } = await import("./lib/historyImport");
+      const batch = await parseHistoryWorkbook(file);
+      if (batch.records.length === 0) {
+        setImportError("No se encontraron referencias de casos reconocibles en el archivo.");
+        return;
+      }
+      const importedCount = await importHistoricalCases(batch, file);
+      setSelectedId(batch.records[0].id);
+      setImportNotice(`${importedCount} registros históricos nuevos incorporados desde ${batch.sheets.filter((sheet) => sheet.importedRows > 0).length} hojas. ${importedCount < batch.records.length ? `${batch.records.length - importedCount} ya estaban en la memoria. ` : ""}Los datos activos no fueron modificados.`);
+    } catch {
+      setImportError("No fue posible leer el Excel. Revisa que sea un archivo .xlsx o .xls válido.");
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  return (
+    <AppShell>
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Memoria operativa</p>
+          <h2>Historial de casos</h2>
+          <p className="section-subtitle">Consulta los casos migrados sin mezclarlos con el trabajo activo. Cada registro conserva su origen y campos identificados, junto con el Excel fuente asociado.</p>
+        </div>
+        <label className="button-primary history-import-button">
+          <FolderUp size={17} /> {isImporting ? "Procesando Excel..." : "Importar historial Excel"}
+          <input type="file" accept=".xlsx,.xls" disabled={isImporting} onChange={(event) => importFile(event.target.files?.[0])} />
+        </label>
+      </div>
+
+      {importError && <div className="form-error">{importError}</div>}
+      {importNotice && <div className="notice mb-4">{importNotice}</div>}
+
+      <section className="history-metrics">
+        <Metric title="Registros históricos" value={historico.length} icon={<History size={20} />} />
+        <Metric title="Referencias repetidas" value={duplicateKeys.size} icon={<AlertTriangle size={20} />} tone={duplicateKeys.size > 0 ? "warn" : "ok"} />
+        <Metric title="Hojas importadas" value={ultimaImportacionHistorico?.sheets.filter((sheet) => sheet.importedRows > 0).length || 0} icon={<FileText size={20} />} />
+        <Metric title="Resultados visibles" value={filtered.length} icon={<Search size={20} />} />
+      </section>
+
+      <section className="history-layout mt-5">
+        <div className="history-list-panel panel">
+          <div className="panel-title">
+            <div>
+              <h3>Registros conservados</h3>
+              <p className="panel-kicker">La memoria histórica no modifica los casos activos.</p>
+            </div>
+            <span>{historico.length} total</span>
+          </div>
+          <div className="toolbar history-toolbar">
+            <div className="search-box">
+              <Search size={18} />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar referencia, cliente, nave..." />
+            </div>
+            <select className="input history-category-filter" value={category} onChange={(event) => setCategory(event.target.value)}>
+              <option>Todos</option>
+              {["Preclaim", "FIS", "Presentar", "Traspasado", "Descartado"].map((item) => <option key={item}>{item}</option>)}
+            </select>
+          </div>
+          {historicoCargando ? (
+            <EmptyState text="Cargando memoria histórica..." />
+          ) : historico.length === 0 ? (
+            <EmptyState text="Importa el Excel histórico para crear la memoria consultable." />
+          ) : (
+            <div className="history-table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Referencia</th>
+                    <th>Asegurado</th>
+                    <th>Nave / viaje</th>
+                    <th>Handler</th>
+                    <th>Origen</th>
+                    <th>Clase</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((record) => (
+                    <tr key={record.id} className={cx("history-row", selectedId === record.id && "selected")} onClick={() => setSelectedId(record.id)}>
+                      <td>
+                        <button type="button" className="history-record-button">
+                          <strong>{record.reference}</strong>
+                          {duplicateKeys.has(record.referenceKey) && <span>Referencia repetida</span>}
+                        </button>
+                      </td>
+                      <td>{record.assured || "Sin dato"}</td>
+                      <td>{record.vessel || "Sin nave"}<span className="block text-xs text-slate-500">{record.voyage || "Sin viaje"}</span></td>
+                      <td>{record.claimHandler || "Sin asignar"}</td>
+                      <td>{record.sourceSheet}<span className="block text-xs text-slate-500">Fila {record.sourceRow}</span></td>
+                      <td><StatusPill label={record.category} tone={record.category === "Descartado" ? "missing" : record.category === "Traspasado" ? "ok" : "warn"} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {filtered.length === 0 && <EmptyState text="No hay registros para los filtros seleccionados." />}
+            </div>
+          )}
+        </div>
+
+        <HistoricalRecordDetail record={selected} duplicate={selected ? duplicateKeys.has(selected.referenceKey) : false} />
+      </section>
+    </AppShell>
+  );
+}
+
+function HistoricalRecordDetail({ record, duplicate }: { record?: HistoricalCase; duplicate: boolean }) {
+  if (!record) {
+    return <section className="panel history-detail"><EmptyState text="Selecciona un registro para consultar su memoria original." /></section>;
+  }
+  return (
+    <section className="panel history-detail">
+      <div className="panel-title">
+        <div>
+          <p className="eyebrow">Registro protegido</p>
+          <h3>{record.reference}</h3>
+        </div>
+        <StatusPill label="Solo lectura" tone="missing" />
+      </div>
+      {duplicate && <div className="notice mb-4">Esta referencia aparece en más de una hoja o fila. Los registros se conservaron separados.</div>}
+      <div className="history-detail-grid">
+        <HistoricalValue label="Categoría" value={record.category} />
+        <HistoricalValue label="Estado original" value={record.legacyStatus} />
+        <HistoricalValue label="Handler" value={record.claimHandler} />
+        <HistoricalValue label="CS Claim No" value={record.csClaimNo} />
+        <HistoricalValue label="Asegurado" value={record.assured} />
+        <HistoricalValue label="Oponente" value={record.opponent} />
+        <HistoricalValue label="Nave / viaje" value={[record.vessel, record.voyage].filter(Boolean).join(" / ")} />
+        <HistoricalValue label="Pérdida declarada" value={record.claimAmount !== undefined ? record.claimAmount.toLocaleString("es-CL") : undefined} />
+        <HistoricalValue label="Carga" value={record.commodity} />
+        <HistoricalValue label="Fecha de embarque" value={record.dateOfLoading} />
+        <HistoricalValue label="Fecha de descarga" value={record.dateOfDischarge} />
+        <HistoricalValue label="Inspector" value={record.surveyor} />
+      </div>
+      <div className="history-detail-block">
+        <strong>Documentos o pendientes registrados</strong>
+        <p>{record.missingDocumentsRaw || "Sin detalle documental estructurado en la fuente."}</p>
+      </div>
+      <div className="history-detail-block">
+        <strong>Resumen o incidente original</strong>
+        <p>{record.incidentSummaryRaw || "Sin resumen registrado en la fuente."}</p>
+      </div>
+      <div className="history-source-note">
+        Fuente: hoja <strong>{record.sourceSheet}</strong>, fila <strong>{record.sourceRow}</strong>. Importado el {new Date(record.importedAt).toLocaleString("es-CL")}. El archivo Excel original permanece asociado al lote de importación.
+      </div>
+      <details className="history-raw-details">
+        <summary>Ver trazabilidad de la fila original</summary>
+        <p className="history-source-note">Los valores completos se conservan en el archivo Excel asociado. Esta ficha muestra los campos identificados para consulta rápida, junto con la hoja y fila de origen.</p>
+      </details>
+    </section>
+  );
+}
+
+function HistoricalValue({ label, value }: { label: string; value?: string }) {
+  return <div className="history-value"><span>{label}</span><strong>{value || "Sin dato"}</strong></div>;
 }
 
 function NewCasePage() {
@@ -2008,6 +2204,11 @@ function ManualPage() {
       title: "12. Informe de revisión y traspaso",
       body:
         "Desde la pestaña Informe, el handler selecciona FIS para recupero extrajudicial o Logistic para recupero judicial y genera un resumen con documentación disponible y pendiente, causa propuesta, mérito preliminar y cálculo seleccionado. El informe queda en el historial, se puede descargar y debe revisarse antes de confirmar el traspaso. Si aún existen pendientes, el sistema los muestra como observaciones explícitas."
+    },
+    {
+      title: "13. Memoria histórica",
+      body:
+        "Permite importar el historial completo desde Excel. Conserva todos los registros de origen, hoja, fila, valores originales y referencias repetidas. La memoria se puede buscar y filtrar, pero no modifica los casos activos ni permite editar directamente el registro histórico."
     }
   ];
   const roleGuides = [
@@ -2060,6 +2261,7 @@ function ManualPage() {
               <li>Generar el informe de revisión, seleccionar destino FIS o Logistic y revisar las observaciones.</li>
               <li>Confirmar el traspaso y, si corresponde, generar la carta.</li>
               <li>Cambiar a Gerente para revisar dashboard, benchmark, alertas y reversión.</li>
+              <li>Entrar a Memoria para importar y consultar el historial completo desde Excel.</li>
             </ol>
           </div>
           <div className="panel">
@@ -2155,6 +2357,7 @@ export default function App() {
       <Route path="/" element={<RoleSelectorPage />} />
       <Route path="/dashboard" element={<DashboardPage />} />
       <Route path="/casos" element={<CasesPage />} />
+      <Route path="/historial" element={<HistoricalMemoryPage />} />
       <Route path="/casos/nuevo" element={<NewCasePage />} />
       <Route path="/casos/:id" element={<CaseDetailPage />} />
       <Route path="/benchmark" element={<BenchmarkPage />} />

@@ -12,7 +12,9 @@ import {
   ReviewReport,
   SessionUser,
   TransferDestination,
-  UploadDraft
+  UploadDraft,
+  HistoricalCase,
+  HistoryImportBatch
 } from "../types/domain";
 import {
   buildCasoFromInput,
@@ -23,6 +25,7 @@ import {
   STORAGE_PREFIX
 } from "../lib/business";
 import { buildReviewReport } from "../lib/review";
+import { loadHistoryStore, saveHistoryBatch } from "../lib/historyStorage";
 
 type DemoState = {
   usuario: SessionUser;
@@ -30,6 +33,9 @@ type DemoState = {
   documentos: Documento[];
   calculosPerdida: CalculoPerdida[];
   bitacora: BitacoraEvento[];
+  historico: HistoricalCase[];
+  ultimaImportacionHistorico?: Omit<HistoryImportBatch, "records"> & { records: number };
+  historicoCargando: boolean;
   setUsuario: (usuario: SessionUser) => void;
   createCase: (input: NewCaseInput, complete: boolean) => Caso;
   updateCase: (casoId: string, patch: Partial<Caso>) => void;
@@ -42,6 +48,8 @@ type DemoState = {
   transitionCase: (casoId: string, nextStatus: CaseStatus, detail: string) => void;
   revertCase: (casoId: string, previousStatus: CaseStatus, reason: string) => { ok: boolean; error?: string };
   registerLetter: (casoId: string, detail: string) => void;
+  importHistoricalCases: (batch: HistoryImportBatch, sourceFile: Blob) => Promise<number>;
+  hydrateHistoricalCases: () => Promise<void>;
   resetDemo: () => void;
 };
 
@@ -196,7 +204,10 @@ function initialState() {
     casos: seedCases,
     documentos: seedDocs,
     calculosPerdida: seedCalculations,
-    bitacora: seedEvents
+    bitacora: seedEvents,
+    historico: [],
+    ultimaImportacionHistorico: undefined,
+    historicoCargando: false
   };
 }
 
@@ -451,11 +462,47 @@ export const useDemoStore = create<DemoState>()(
           ]
         }));
       },
+      importHistoricalCases: async (batch, sourceFile) => {
+        const current = get().historico;
+        const knownIds = new Set(current.map((record) => record.id));
+        const newRecords = batch.records.filter((record) => !knownIds.has(record.id));
+        set((state) => ({
+          historico: [...state.historico, ...newRecords],
+          ultimaImportacionHistorico: {
+            batchId: batch.batchId,
+            fileName: batch.fileName,
+            importedAt: batch.importedAt,
+            records: newRecords.length,
+            sheets: batch.sheets,
+            duplicateReferenceKeys: batch.duplicateReferenceKeys
+          }
+        }));
+        await saveHistoryBatch({ ...batch, records: newRecords }, sourceFile);
+        return newRecords.length;
+      },
+      hydrateHistoricalCases: async () => {
+        set({ historicoCargando: true });
+        try {
+          const stored = await loadHistoryStore();
+          set({ historico: stored.records, ultimaImportacionHistorico: stored.latest });
+        } catch {
+          set({ historico: [], ultimaImportacionHistorico: undefined });
+        } finally {
+          set({ historicoCargando: false });
+        }
+      },
       resetDemo: () => set(initialState())
     }),
     {
       name: `${STORAGE_PREFIX}state`,
-      version: 1
+      version: 1,
+      partialize: (state) => ({
+        usuario: state.usuario,
+        casos: state.casos,
+        documentos: state.documentos,
+        calculosPerdida: state.calculosPerdida,
+        bitacora: state.bitacora
+      })
     }
   )
 );

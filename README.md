@@ -9,7 +9,7 @@ Demo funcional completo para FIS / Intervent. Digitaliza el flujo Preclaim: alta
 - Zustand con persistencia en `localStorage`
 - Fuse.js para clasificación fuzzy de documentos
 
-SheetJS queda fuera de esta entrega porque el MVP no importa Excel todavía; se puede sumar cuando se construya ese módulo futuro.
+SheetJS se utiliza para importar el historial operativo desde Excel. La importación conserva todos los registros reconocibles, incluyendo hoja y fila, y los deja disponibles en la memoria histórica sin mezclarlos con los casos activos.
 
 ## Ejecutar localmente
 
@@ -48,6 +48,8 @@ El proyecto está configurado con assets relativos y navegación hash para funci
 ## Persistencia
 
 La app usa `localStorage` con prefijo `fis-intervent-demo:`. Los documentos cargados guardan solo metadata: nombre, tipo, fecha y `pathMock`. No se guarda binario ni base64.
+
+La memoria histórica también se persiste localmente para este demo. Al importar un Excel se guardan los campos identificados, la hoja de origen, la fila, la referencia normalizada, las posibles repeticiones y el archivo Excel original asociado al lote. En una versión productiva estos datos deben migrarse a almacenamiento privado con autenticación y control de permisos.
 
 ## Datos demo
 
