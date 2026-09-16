@@ -7,6 +7,7 @@ import {
   CalendarClock,
   Check,
   ChevronRight,
+  ClipboardCheck,
   ClipboardList,
   Copy,
   Download,
@@ -18,10 +19,12 @@ import {
   LayoutDashboard,
   Lock,
   Plus,
+  Pencil,
   RefreshCcw,
   Save,
   Search,
   ShieldCheck,
+  Settings,
   UserRound,
   X
 } from "lucide-react";
@@ -40,24 +43,45 @@ import {
   ReviewReport,
   TransferDestination,
   UploadDraft,
-  HistoricalCase
+  HistoricalCase,
+  CalculationMethodConfig,
+  CalculationMethodId,
+  TemplateConfig,
+  TemplateId,
+  DischargeDateType,
+  CurrencyCode
 } from "./types/domain";
 import { mergeExtractedData, processDocumentFiles } from "./lib/extraction";
 import { buildReviewReportText } from "./lib/review";
+import { exportCaseTrackingXlsx, exportHistoricalMemoryXlsx } from "./lib/caseExport";
 import {
   canEditCalculation,
+  calculateLoss,
   currency,
   daysWithoutMovement,
   DOCUMENT_TYPES,
   documentCompleteness,
   HANDLERS,
   hasRequiredMinimum,
+  INSPECTORS,
+  INACTIVITY_ALERT_DAYS,
   nextStatusFromCase,
   pendingField,
   prescriptionStatus,
   suggestDamageMerit,
   suggestHandler
 } from "./lib/business";
+import {
+  buildLetterTemplate,
+  buildPrintableHtml,
+  getLetterTemplate,
+  LETTER_TEMPLATES,
+  LetterTemplateId,
+  TEMPLATE_TOKENS,
+  templateConflicts,
+  templateTokenIssues
+} from "./lib/templates";
+import { buildJointInspectionLetter } from "./lib/inspection";
 
 const STATUS_LABELS: CaseStatus[] = [
   "Datos incompletos",
@@ -65,8 +89,10 @@ const STATUS_LABELS: CaseStatus[] = [
   "Documentación pendiente",
   "Cálculo completo",
   "Traspasado a FIS",
-  "Traspasado a Logistic"
+  "Traspasado a Lawgistic"
 ];
+
+const MASS_VESSEL_MIN_CASES = 2;
 const COMPANY_LOGO_SRC = `${import.meta.env.BASE_URL}fis-logo.jpeg`;
 
 function cx(...classes: Array<string | false | undefined>) {
@@ -83,15 +109,68 @@ function downloadTextFile(fileName: string, text: string) {
   URL.revokeObjectURL(url);
 }
 
+function downloadHtmlFile(fileName: string, html: string) {
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function copyText(text: string) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Continue with the browser fallback when clipboard permissions are unavailable.
+    }
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch {
+    copied = false;
+  } finally {
+    textarea.remove();
+  }
+  return copied;
+}
+
+function printHtmlFile(html: string) {
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) return false;
+  printWindow.document.write(html);
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
+  return true;
+}
+
 function useVisibleCases() {
   const { usuario, casos } = useDemoStore();
+  if (usuario.role === "Inspector") return casos.filter((caso) => caso.inspectorAsignado === usuario.nombre);
   return usuario.role === "Handler" ? casos.filter((caso) => caso.claimHandler === usuario.nombre) : casos;
 }
 
 function shellTitle(role: string) {
   if (role === "CEO") return "Vista dirección";
   if (role === "Gerente") return "Panel gerencia";
+  if (role === "Inspector") return "Vista inspección";
   return "Mesa handler";
+}
+
+function vesselVoyageKey(caso: Caso) {
+  return `${caso.vessel.trim().toLowerCase()}|${(caso.voyage || "sin viaje").trim().toLowerCase()}`;
 }
 
 function AppShell({ children }: { children: React.ReactNode }) {
@@ -113,9 +192,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
           <nav className="app-nav hidden items-center gap-1 md:flex">
             <NavLink to="/dashboard" icon={<LayoutDashboard size={18} />} label="Dashboard" />
             <NavLink to="/casos" icon={<ClipboardList size={18} />} label="Casos" />
-            <NavLink to="/historial" icon={<History size={18} />} label="Memoria" />
+            {usuario.role !== "Inspector" && <NavLink to="/historial" icon={<History size={18} />} label="Memoria" />}
             {usuario.role === "Handler" && <NavLink to="/casos/nuevo" icon={<Plus size={18} />} label="Nuevo caso" />}
-            {usuario.role !== "Handler" && <NavLink to="/benchmark" icon={<BarChart3 size={18} />} label="Benchmark" />}
+            {(usuario.role === "Gerente" || usuario.role === "CEO") && <NavLink to="/benchmark" icon={<BarChart3 size={18} />} label="Benchmark" />}
+            {(usuario.role === "Gerente" || usuario.role === "CEO") && <NavLink to="/mantenedores" icon={<Settings size={18} />} label="Mantenedores" />}
             <NavLink to="/manual" icon={<HelpCircle size={18} />} label="Manual" />
           </nav>
           <div className="header-tools">
@@ -138,6 +218,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 ))}
                 <option value="Gerente|Ljubinka Basic">Gerente · Ljubinka</option>
                 <option value="CEO|Dirección NPR">CEO · Dirección</option>
+                <option value={`Inspector|${INSPECTORS[0]}`}>Inspector · {INSPECTORS[0]}</option>
               </select>
               <button className="icon-button" title="Reiniciar datos demo" onClick={resetDemo}>
                 <RefreshCcw size={18} />
@@ -174,7 +255,8 @@ function RoleSelectorPage() {
   const roles = [
     { role: "Handler" as const, nombre: "Emely Lambraño", title: "Handler", copy: "Procesa casos, carga documentos y ejecuta cálculos." },
     { role: "Gerente" as const, nombre: "Ljubinka Basic", title: "Gerente", copy: "Supervisa todos los casos, alertas y distribución del equipo." },
-    { role: "CEO" as const, nombre: "Dirección NPR", title: "CEO", copy: "Revisa riesgos críticos y estado ejecutivo del portafolio." }
+    { role: "CEO" as const, nombre: "Dirección NPR", title: "CEO", copy: "Revisa riesgos críticos y estado ejecutivo del portafolio." },
+    { role: "Inspector" as const, nombre: INSPECTORS[0], title: "Inspector", copy: "Consulta solo casos asignados y registra la inspección." }
   ];
   return (
     <div className="role-gate">
@@ -206,7 +288,7 @@ function RoleSelectorPage() {
               <p className="eyebrow">Acceso de prueba</p>
               <h2>Selecciona tu vista</h2>
             </div>
-            <span className="access-count">03 perfiles</span>
+            <span className="access-count">04 perfiles</span>
           </div>
           <p className="access-description">Cada perfil muestra el mismo expediente con permisos y alcance distintos.</p>
           <div className="role-options">
@@ -246,12 +328,25 @@ function RoleSelectorPage() {
 
 function DashboardPage() {
   const visibleCases = useVisibleCases();
-  const { documentos, usuario } = useDemoStore();
+  const { documentos, calculosPerdida, bitacora, usuario } = useDemoStore();
   const [handlerFilter, setHandlerFilter] = useState("Todos");
   const filtered = handlerFilter === "Todos" ? visibleCases : visibleCases.filter((caso) => caso.claimHandler === handlerFilter);
+  const massVesselGroups = useMemo(() => {
+    const groups = new Map<string, { key: string; vessel: string; voyage: string; cases: Caso[] }>();
+    filtered.forEach((caso) => {
+      if (!caso.vessel.trim()) return;
+      const key = vesselVoyageKey(caso);
+      const current = groups.get(key) || { key, vessel: caso.vessel, voyage: caso.voyage || "Sin viaje", cases: [] };
+      current.cases.push(caso);
+      groups.set(key, current);
+    });
+    return [...groups.values()]
+      .filter((group) => group.cases.length >= MASS_VESSEL_MIN_CASES)
+      .sort((left, right) => right.cases.length - left.cases.length || left.vessel.localeCompare(right.vessel));
+  }, [filtered]);
   const alerts = filtered
     .map((caso) => ({ caso, prescription: prescriptionStatus(caso), staleDays: daysWithoutMovement(caso) }))
-    .filter((item) => item.prescription.tone !== "ok" || item.staleDays >= 14)
+    .filter((item) => item.prescription.tone !== "ok" || item.staleDays > INACTIVITY_ALERT_DAYS)
     .sort((a, b) => {
       const priority = { danger: 0, missing: 1, warn: 2, ok: 3 };
       return priority[a.prescription.tone] - priority[b.prescription.tone] || b.staleDays - a.staleDays;
@@ -264,7 +359,7 @@ function DashboardPage() {
     handler,
     count: filtered.filter((caso) => caso.claimHandler === handler).length
   }));
-  const staleCount = filtered.filter((caso) => daysWithoutMovement(caso) >= 14).length;
+  const staleCount = filtered.filter((caso) => daysWithoutMovement(caso) > INACTIVITY_ALERT_DAYS).length;
   const riskCount = alerts.length;
   const coverage = filtered.length
     ? Math.round(
@@ -274,6 +369,7 @@ function DashboardPage() {
         }, 0) / filtered.length
       )
     : 0;
+  const exportTracking = () => exportCaseTrackingXlsx(filtered, documentos, calculosPerdida, bitacora, `seguimiento-preclaim-${new Date().toISOString().slice(0, 10)}.xlsx`);
 
   return (
     <AppShell>
@@ -286,14 +382,24 @@ function DashboardPage() {
           </p>
           <div className="dashboard-actions">
             {usuario.role === "Handler" ? (
-              <Link className="button-primary" to="/casos/nuevo">
-                <Plus size={16} /> Nuevo caso
-              </Link>
+              <div className="flex flex-wrap gap-3">
+                <Link className="button-primary" to="/casos/nuevo">
+                  <Plus size={16} /> Nuevo caso
+                </Link>
+                <button className="button-secondary" type="button" onClick={exportTracking}>
+                  <Download size={16} /> Exportar seguimiento
+                </button>
+              </div>
+            ) : usuario.role === "Inspector" ? (
+              <p className="notice">Vista restringida a los casos asignados para inspección.</p>
             ) : (
               <>
                 <Link className="button-primary" to="/benchmark">
                   <BarChart3 size={16} /> Ver benchmark
                 </Link>
+                <button className="button-secondary" type="button" onClick={exportTracking}>
+                  <Download size={16} /> Exportar seguimiento
+                </button>
                 <select className="input" value={handlerFilter} onChange={(event) => setHandlerFilter(event.target.value)} aria-label="Filtrar por handler">
                   <option>Todos</option>
                   {HANDLERS.map((handler) => (
@@ -328,6 +434,12 @@ function DashboardPage() {
         </div>
       </section>
 
+      {staleCount > 0 && (
+        <div className="notice mt-5" role="status">
+          Aviso de gestión: {staleCount} {staleCount === 1 ? "caso lleva" : "casos llevan"} más de {INACTIVITY_ALERT_DAYS} días sin movimiento. El aviso se mantiene hasta registrar una nueva actualización.
+        </div>
+      )}
+
       <section className="dashboard-grid mt-6 grid gap-5 lg:grid-cols-[1.05fr_1.5fr]">
         <div className="panel priority-panel">
           <div className="panel-title">
@@ -341,7 +453,7 @@ function DashboardPage() {
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <StatusPill label={prescription.label} tone={prescription.tone} />
-                    {staleDays >= 14 && <StatusPill label={`${staleDays} días sin movimiento`} tone="warn" />}
+                    {staleDays > INACTIVITY_ALERT_DAYS && <StatusPill label={`${staleDays} días sin movimiento`} tone="warn" />}
                   </div>
                   <p className="mt-2 font-semibold">{caso.id}</p>
                   <p className="text-sm text-slate-600">
@@ -372,6 +484,27 @@ function DashboardPage() {
               {byHandler.map((item) => (
                 <Distribution key={item.handler} label={item.handler} value={item.count} total={Math.max(filtered.length, 1)} />
               ))}
+            </div>
+          </div>
+          <div className="panel recent-panel">
+            <div className="panel-title">
+              <div>
+                <h3>Naves con casos relacionados</h3>
+                <p className="panel-kicker">Agrupación por nave y viaje</p>
+              </div>
+              <span>{massVesselGroups.length} grupos</span>
+            </div>
+            <div className="recent-list">
+              {massVesselGroups.map((group) => (
+                <Link key={group.key} to={`/casos?group=${encodeURIComponent(group.key)}`} className="recent-row">
+                  <div>
+                    <strong>{group.cases.length} casos · {group.vessel}</strong>
+                    <span>Viaje {group.voyage} · abrir conjunto relacionado</span>
+                  </div>
+                  <ChevronRight size={18} />
+                </Link>
+              ))}
+              {massVesselGroups.length === 0 && <EmptyState text="No hay naves con dos o más casos en el filtro actual." />}
             </div>
           </div>
           <div className="panel recent-panel">
@@ -428,8 +561,8 @@ function Distribution({ label, value, total }: { label: string; value: number; t
 
 function BenchmarkPage() {
   const visibleCases = useVisibleCases();
-  const { documentos, usuario } = useDemoStore();
-  if (usuario.role === "Handler") return <Navigate to="/dashboard" replace />;
+  const { documentos, calculosPerdida, bitacora, usuario } = useDemoStore();
+  if (usuario.role === "Handler" || usuario.role === "Inspector") return <Navigate to="/dashboard" replace />;
 
   const rows = HANDLERS.map((handler) => {
     const handlerCases = visibleCases.filter((caso) => caso.claimHandler === handler);
@@ -445,9 +578,9 @@ function BenchmarkPage() {
     ).length;
     const alerts = handlerCases.filter((caso) => {
       const prescription = prescriptionStatus(caso);
-      return prescription.tone !== "ok" || daysWithoutMovement(caso) >= 14;
+      return prescription.tone !== "ok" || daysWithoutMovement(caso) > INACTIVITY_ALERT_DAYS;
     }).length;
-    const stale = handlerCases.filter((caso) => daysWithoutMovement(caso) >= 14).length;
+    const stale = handlerCases.filter((caso) => daysWithoutMovement(caso) > INACTIVITY_ALERT_DAYS).length;
     const completeCalculations = handlerCases.filter((caso) => caso.estado === "Cálculo completo").length;
     return {
       handler,
@@ -491,6 +624,9 @@ function BenchmarkPage() {
         <Link className="button-secondary" to="/dashboard">
           <LayoutDashboard size={17} /> Ir al dashboard
         </Link>
+        <button className="button-primary" type="button" onClick={() => exportCaseTrackingXlsx(visibleCases, documentos, calculosPerdida, bitacora, `seguimiento-portafolio-${new Date().toISOString().slice(0, 10)}.xlsx`)}>
+          <Download size={17} /> Exportar Excel
+        </button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-5">
@@ -546,7 +682,7 @@ function BenchmarkPage() {
           </table>
         </div>
         <div className="notice mt-4">
-          Docs pendientes = al menos un documento del checklist faltante. Alerta = prescripción no verde o 14 días o más sin movimiento.
+          Docs pendientes = al menos un documento del checklist faltante. Alerta = prescripción no verde o más de 15 días sin movimiento.
         </div>
       </section>
     </AppShell>
@@ -555,19 +691,34 @@ function BenchmarkPage() {
 
 function CasesPage() {
   const visibleCases = useVisibleCases();
-  const { usuario } = useDemoStore();
+  const { documentos, calculosPerdida, bitacora, usuario } = useDemoStore();
+  const location = useLocation();
+  const vesselGroup = new URLSearchParams(location.search).get("group") || "";
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("Todos");
   const filtered = visibleCases.filter((caso) => {
-    const text = `${caso.id} ${caso.assured} ${caso.opponent} ${caso.vessel} ${caso.claimHandler}`.toLowerCase();
-    return text.includes(query.toLowerCase()) && (status === "Todos" || caso.estado === status);
+    const caseDocs = documentos.filter((documento) => documento.casoId === caso.id);
+    const text = [
+      caso.id,
+      caso.assured,
+      caso.opponent,
+      caso.vessel,
+      caso.claimHandler,
+      caso.voyage,
+      caso.cargo,
+      ...caseDocs.flatMap((documento) => [documento.originalName, documento.nombreArchivo, documento.textoExtraido])
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return text.includes(query.toLowerCase()) && (status === "Todos" || caso.estado === status) && (!vesselGroup || vesselVoyageKey(caso) === vesselGroup);
   });
   return (
     <AppShell>
       <div className="section-heading">
         <div>
           <p className="eyebrow">Lista de casos</p>
-          <h2>{usuario.role === "Handler" ? "Mis casos" : "Portafolio completo"}</h2>
+          <h2>{usuario.role === "Handler" ? "Mis casos" : usuario.role === "Inspector" ? "Casos asignados" : "Portafolio completo"}</h2>
           <p className="section-subtitle">Busca, filtra y entra al expediente para continuar el ciclo preclaim.</p>
         </div>
         {usuario.role === "Handler" && (
@@ -579,7 +730,11 @@ function CasesPage() {
       <div className="toolbar">
         <div className="search-box">
           <Search size={18} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por reference, asegurado, nave..." />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={usuario.role === "Inspector" ? "Buscar por referencia o contenedor..." : "Buscar por referencia, asegurado, nave..."}
+          />
         </div>
         <select className="input w-64" value={status} onChange={(event) => setStatus(event.target.value)}>
           <option>Todos</option>
@@ -587,7 +742,15 @@ function CasesPage() {
             <option key={item}>{item}</option>
           ))}
         </select>
+        <button className="button-secondary" type="button" onClick={() => exportCaseTrackingXlsx(filtered, documentos, calculosPerdida, bitacora, `seguimiento-casos-${new Date().toISOString().slice(0, 10)}.xlsx`)}>
+          <Download size={16} /> Exportar Excel
+        </button>
       </div>
+      {vesselGroup && (
+        <div className="notice mb-4" role="status">
+          Filtro activo: casos de la misma nave y viaje. <Link className="text-link" to="/casos">Quitar filtro</Link>
+        </div>
+      )}
       <div className="panel overflow-hidden p-0">
         <table className="data-table">
           <thead>
@@ -664,6 +827,7 @@ function HistoricalMemoryPage() {
     return haystack.includes(query.toLowerCase()) && (category === "Todos" || record.category === category);
   });
   const selected = historico.find((record) => record.id === selectedId);
+  const historicalCalculationCount = historico.filter((record) => record.calculoHistorico).length;
 
   const importFile = async (file?: File) => {
     if (!file) return;
@@ -671,15 +835,17 @@ function HistoricalMemoryPage() {
     setImportError("");
     setImportNotice("");
     try {
-      const { parseHistoryWorkbook } = await import("./lib/historyImport");
+      const { historicalRecordKey, parseHistoryWorkbook } = await import("./lib/historyImport");
       const batch = await parseHistoryWorkbook(file);
       if (batch.records.length === 0) {
         setImportError("No se encontraron referencias de casos reconocibles en el archivo.");
         return;
       }
       const importedCount = await importHistoricalCases(batch, file);
-      setSelectedId(batch.records[0].id);
-      setImportNotice(`${importedCount} registros históricos nuevos incorporados desde ${batch.sheets.filter((sheet) => sheet.importedRows > 0).length} hojas. ${importedCount < batch.records.length ? `${batch.records.length - importedCount} ya estaban en la memoria. ` : ""}Los datos activos no fueron modificados.`);
+      const firstRecordKey = historicalRecordKey(batch.records[0]);
+      const selectedRecord = useDemoStore.getState().historico.find((record) => historicalRecordKey(record) === firstRecordKey);
+      setSelectedId(selectedRecord?.id);
+      setImportNotice(`${importedCount} registros históricos nuevos incorporados desde ${batch.sheets.filter((sheet) => sheet.importedRows > 0).length} hojas. ${importedCount < batch.records.length ? `${batch.records.length - importedCount} registros duplicados fueron omitidos. ` : ""}Los datos activos no fueron modificados.`);
     } catch {
       setImportError("No fue posible leer el Excel. Revisa que sea un archivo .xlsx o .xls válido.");
     } finally {
@@ -699,6 +865,9 @@ function HistoricalMemoryPage() {
           <FolderUp size={17} /> {isImporting ? "Procesando Excel..." : "Importar historial Excel"}
           <input type="file" accept=".xlsx,.xls" disabled={isImporting} onChange={(event) => importFile(event.target.files?.[0])} />
         </label>
+        <button className="button-secondary" type="button" disabled={historico.length === 0} onClick={() => exportHistoricalMemoryXlsx(historico, `memoria-historica-${new Date().toISOString().slice(0, 10)}.xlsx`)}>
+          <Download size={17} /> Descargar memoria
+        </button>
       </div>
 
       {importError && <div className="form-error">{importError}</div>}
@@ -708,8 +877,12 @@ function HistoricalMemoryPage() {
         <Metric title="Registros históricos" value={historico.length} icon={<History size={20} />} />
         <Metric title="Referencias repetidas" value={duplicateKeys.size} icon={<AlertTriangle size={20} />} tone={duplicateKeys.size > 0 ? "warn" : "ok"} />
         <Metric title="Hojas importadas" value={ultimaImportacionHistorico?.sheets.filter((sheet) => sheet.importedRows > 0).length || 0} icon={<FileText size={20} />} />
-        <Metric title="Resultados visibles" value={filtered.length} icon={<Search size={20} />} />
+        <Metric title="Con cálculo histórico" value={historicalCalculationCount} icon={<BarChart3 size={20} />} tone={historicalCalculationCount > 0 ? "ok" : undefined} />
       </section>
+
+      <p className="history-memory-note">
+        Los cálculos históricos son evidencia de referencia. El sistema no los convierte en una decisión automática para los casos activos.
+      </p>
 
       <section className="history-layout mt-5">
         <div className="history-list-panel panel">
@@ -804,6 +977,7 @@ function HistoricalRecordDetail({ record, duplicate }: { record?: HistoricalCase
         <HistoricalValue label="Fecha de descarga" value={record.dateOfDischarge} />
         <HistoricalValue label="Inspector" value={record.surveyor} />
       </div>
+      {record.calculoHistorico && <HistoricalCalculationDetail insight={record.calculoHistorico} />}
       <div className="history-detail-block">
         <strong>Documentos o pendientes registrados</strong>
         <p>{record.missingDocumentsRaw || "Sin detalle documental estructurado en la fuente."}</p>
@@ -823,6 +997,26 @@ function HistoricalRecordDetail({ record, duplicate }: { record?: HistoricalCase
   );
 }
 
+function HistoricalCalculationDetail({ insight }: { insight: NonNullable<HistoricalCase["calculoHistorico"]> }) {
+  return (
+    <div className="history-detail-block">
+      <div className="panel-title">
+        <strong>Evidencia de cálculo histórico</strong>
+        <StatusPill label={insight.confidence} tone={insight.confidence === "Completo" ? "ok" : insight.confidence === "Parcial" ? "warn" : "missing"} />
+      </div>
+      <div className="history-detail-grid">
+        <HistoricalValue label="Método identificado" value={insight.method} />
+        <HistoricalValue label="Fórmula observada" value={insight.formula} />
+        <HistoricalValue label="Valor de referencia" value={insight.referenceValue !== undefined ? insight.referenceValue.toLocaleString("es-CL") : undefined} />
+        <HistoricalValue label="Valor real / venta" value={insight.actualValue !== undefined ? insight.actualValue.toLocaleString("es-CL") : undefined} />
+        <HistoricalValue label="Resultado reconstruido" value={insight.result !== undefined ? `${insight.result.toLocaleString("es-CL")}${insight.currency ? ` ${insight.currency}` : ""}` : undefined} />
+        <HistoricalValue label="Tipo de cambio" value={insight.exchangeRate !== undefined ? insight.exchangeRate.toLocaleString("es-CL") : undefined} />
+      </div>
+      <p className="history-source-note">Campos fuente: {insight.sourceFields.join(", ")}{insight.note ? ` · ${insight.note}` : ""}</p>
+    </div>
+  );
+}
+
 function HistoricalValue({ label, value }: { label: string; value?: string }) {
   return <div className="history-value"><span>{label}</span><strong>{value || "Sin dato"}</strong></div>;
 }
@@ -830,7 +1024,7 @@ function HistoricalValue({ label, value }: { label: string; value?: string }) {
 function NewCasePage() {
   const { usuario, casos, createCase, prepareUpload, confirmUpload } = useDemoStore();
   const navigate = useNavigate();
-  const [input, setInput] = useState<NewCaseInput>({ claimHandler: usuario.nombre });
+  const [input, setInput] = useState<NewCaseInput>({ claimHandler: usuario.nombre, dateOfDischargeType: "Real" });
   const [drafts, setDrafts] = useState<UploadDraft[]>([]);
   const [proposal, setProposal] = useState<ExtractedCaseData>();
   const [isDragging, setIsDragging] = useState(false);
@@ -896,7 +1090,9 @@ function NewCasePage() {
   };
   const validateComplete = () => {
     if (!hasRequiredMinimum(input)) return "Completa handler, asegurado, oponente, nave, fecha de descarga y jurisdicción.";
-    if (input.dateOfDischarge && input.dateOfDischarge > new Date().toISOString().slice(0, 10)) return "La fecha de descarga no puede ser futura.";
+    if (input.dateOfDischarge && input.dateOfDischarge > new Date().toISOString().slice(0, 10) && input.dateOfDischargeType !== "ETA") {
+      return "La fecha efectiva de descarga no puede ser futura. Selecciona ETA si corresponde.";
+    }
     if (input.claimAmount !== undefined && input.claimAmount <= 0) return "El monto reclamado debe ser positivo.";
     if (input.id && casos.some((caso) => caso.id === input.id)) return "La referencia ya existe en el expediente. Abre el caso existente o corrige la referencia antes de continuar.";
     return "";
@@ -1021,8 +1217,14 @@ function NewCasePage() {
           <Field label="Puerto de descarga">
             <input className="input" value={input.placeOfDischarge || ""} onChange={(event) => update("placeOfDischarge", event.target.value)} />
           </Field>
-          <Field label="Fecha de descarga *">
-            <input className="input" type="date" value={input.dateOfDischarge || ""} onChange={(event) => update("dateOfDischarge", event.target.value)} max={new Date().toISOString().slice(0, 10)} />
+          <Field label={input.dateOfDischargeType === "ETA" ? "ETA de descarga *" : "Fecha de descarga *"}>
+            <input className="input" type="date" value={input.dateOfDischarge || ""} onChange={(event) => update("dateOfDischarge", event.target.value)} />
+          </Field>
+          <Field label="Tipo de fecha *">
+            <select className="input" value={input.dateOfDischargeType || "Real"} onChange={(event) => update("dateOfDischargeType", event.target.value as DischargeDateType)}>
+              <option value="Real">Fecha efectiva de descarga</option>
+              <option value="ETA">ETA estimada</option>
+            </select>
           </Field>
           <Field label="Inspector">
             <input className="input" value={input.surveyor || ""} onChange={(event) => update("surveyor", event.target.value)} />
@@ -1080,18 +1282,33 @@ function CaseDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const decodedId = decodeURIComponent(id || "");
-  const { casos, documentos, calculosPerdida, bitacora, usuario, generateReviewReport, transitionCase, revertCase } = useDemoStore();
+  const { casos, documentos, calculosPerdida, bitacora, usuario, generateReviewReport, transitionCase, revertCase, updateCaseDetails, assignInspector } = useDemoStore();
   const caso = casos.find((item) => item.id === decodedId);
   const params = new URLSearchParams(window.location.search);
   const [tab, setTab] = useState(params.get("tab") || "documentos");
-  const [showTransfer, setShowTransfer] = useState<"Traspasado a FIS" | "Traspasado a Logistic" | null>(null);
+  const [showTransfer, setShowTransfer] = useState<"Traspasado a FIS" | "Traspasado a Lawgistic" | null>(null);
   const [revertReason, setRevertReason] = useState("");
   const [revertStatus, setRevertStatus] = useState<CaseStatus>("Preclaim");
   const [notice, setNotice] = useState("");
+  const [isEditingCase, setIsEditingCase] = useState(false);
+  const [editReference, setEditReference] = useState("");
+  const [editDateOfDischarge, setEditDateOfDischarge] = useState("");
+  const [editDateType, setEditDateType] = useState<DischargeDateType>("Real");
+  const [editJurisdiccion, setEditJurisdiccion] = useState<Jurisdiccion | "">("");
+  const [editError, setEditError] = useState("");
+  const [inspectorDraft, setInspectorDraft] = useState(caso?.inspectorAsignado || "");
+  const [inspectorNotice, setInspectorNotice] = useState("");
   if (!caso) {
     return (
       <AppShell>
         <EmptyState text="Caso no encontrado." />
+      </AppShell>
+    );
+  }
+  if (usuario.role === "Inspector" && caso.inspectorAsignado !== usuario.nombre) {
+    return (
+      <AppShell>
+        <EmptyState text="Este caso no está asignado al inspector actual." />
       </AppShell>
     );
   }
@@ -1101,8 +1318,13 @@ function CaseDetailPage() {
   const pres = prescriptionStatus(caso);
   const staleDays = daysWithoutMovement(caso);
   const canWrite = usuario.role === "Handler" && caso.claimHandler === usuario.nombre;
+  const isTransferred = caso.estado === "Traspasado a FIS" || caso.estado === "Traspasado a Lawgistic";
+  const canMutateCase = canWrite && !isTransferred;
+  const canEditCaseDetails = canMutateCase && canEditCalculation(caso);
   const nextStatus = nextStatusFromCase(caso, caseDocs, calculo);
   const canAdvance = nextStatus !== caso.estado;
+  const isInspector = usuario.role === "Inspector";
+  const activeTab = isInspector ? "inspeccion" : tab;
 
   const changeTab = (next: string) => {
     setTab(next);
@@ -1118,16 +1340,20 @@ function CaseDetailPage() {
   };
   const openTransfer = (destination: TransferDestination) => {
     generateReviewReport(caso.id, destination);
-    setShowTransfer(destination === "FIS" ? "Traspasado a FIS" : "Traspasado a Logistic");
+    setShowTransfer(destination === "FIS" ? "Traspasado a FIS" : "Traspasado a Lawgistic");
   };
   const confirmTransfer = () => {
     if (!showTransfer) return;
+    if (!caso.informeRevision?.ready) {
+      setNotice("El traspaso está bloqueado: primero debes resolver las observaciones del informe de revisión.");
+      setShowTransfer(null);
+      return;
+    }
     const destination = showTransfer.replace("Traspasado a ", "");
-    const reportStatus = caso.informeRevision?.status || "Con observaciones";
     transitionCase(
       caso.id,
       showTransfer,
-      `Caso traspasado a ${destination}. Informe de revisión: ${reportStatus}. Edición de cálculo bloqueada.`
+      `Caso traspasado a ${destination}. Informe de revisión listo. Edición del expediente bloqueada.`
     );
     setShowTransfer(null);
   };
@@ -1135,6 +1361,50 @@ function CaseDetailPage() {
     const result = revertCase(caso.id, revertStatus, revertReason);
     setNotice(result.ok ? "Estado revertido y registrado en bitácora." : result.error || "No se pudo revertir.");
     if (result.ok) setRevertReason("");
+  };
+  const beginCaseEdit = () => {
+    setEditReference(caso.id);
+    setEditDateOfDischarge(caso.dateOfDischarge || "");
+    setEditDateType(caso.dateOfDischargeType || "Real");
+    setEditJurisdiccion(caso.jurisdiccion || "");
+    setEditError("");
+    setIsEditingCase(true);
+  };
+  const cancelCaseEdit = () => {
+    setEditError("");
+    setIsEditingCase(false);
+  };
+  const saveCaseDetails = () => {
+    const nextReference = editReference.trim();
+    const today = new Date().toISOString().slice(0, 10);
+    if (!nextReference) {
+      setEditError("La referencia interna es obligatoria.");
+      return;
+    }
+    if (casos.some((item) => item.id !== caso.id && item.id.trim().toLocaleLowerCase() === nextReference.toLocaleLowerCase())) {
+      setEditError("La referencia ya existe en otro caso.");
+      return;
+    }
+    if (editDateOfDischarge && editDateOfDischarge > today && editDateType !== "ETA") {
+      setEditError("La fecha efectiva no puede ser futura. Selecciona ETA si corresponde.");
+      return;
+    }
+    const result = updateCaseDetails(caso.id, {
+      id: nextReference,
+      dateOfDischarge: editDateOfDischarge || undefined,
+      dateOfDischargeType: editDateOfDischarge ? editDateType : undefined,
+      jurisdiccion: editJurisdiccion || undefined
+    });
+    if (!result.ok) {
+      setEditError(result.error || "No se pudieron guardar los cambios.");
+      return;
+    }
+    setIsEditingCase(false);
+    navigate(`/casos/${encodeURIComponent(nextReference)}?tab=${tab}`, { replace: true });
+  };
+  const saveInspectorAssignment = () => {
+    const result = assignInspector(caso.id, inspectorDraft || undefined);
+    setInspectorNotice(result.ok ? "Asignación de inspector actualizada." : result.error || "No se pudo actualizar la asignación.");
   };
 
   return (
@@ -1152,17 +1422,33 @@ function CaseDetailPage() {
           <div className="mt-4 flex flex-wrap gap-2">
             <StatusPill label={caso.estado} tone={caso.estado === "Datos incompletos" ? "missing" : caso.estado.includes("Traspasado") ? "ok" : "warn"} />
             <StatusPill label={pres.label} tone={pres.tone} />
-            {staleDays >= 14 && <StatusPill label={`${staleDays} días sin movimiento`} tone="warn" />}
+            {staleDays > INACTIVITY_ALERT_DAYS && <StatusPill label={`${staleDays} días sin movimiento`} tone="warn" />}
           </div>
         </div>
         <div className="case-actions">
           {notice && <p className="notice">{notice}</p>}
+          {staleDays > INACTIVITY_ALERT_DAYS && (
+            <p className="notice" role="status">
+              Aviso de gestión: este caso lleva más de {INACTIVITY_ALERT_DAYS} días sin movimiento. Registra una actualización para retirarlo.
+            </p>
+          )}
+          {canEditCaseDetails && !isEditingCase && (
+            <button className="button-secondary" onClick={beginCaseEdit}>
+              <Pencil size={16} /> Editar datos clave
+            </button>
+          )}
+          {canWrite && isTransferred && (
+            <p className="notice">Caso traspasado: expediente en modo solo lectura. Gerencia puede revertir el estado si se requiere una corrección.</p>
+          )}
           {usuario.role === "Handler" && !canWrite && (
             <p className="notice">
               Este caso está asignado a <strong>{caso.claimHandler}</strong>. Selecciona ese Handler para editarlo.
             </p>
           )}
-          {canWrite && caso.estado !== "Traspasado a FIS" && caso.estado !== "Traspasado a Logistic" && (
+          {usuario.role === "Inspector" && (
+            <p className="notice">Caso asignado a <strong>{caso.inspectorAsignado}</strong>. Esta vista permite registrar la inspección.</p>
+          )}
+          {canMutateCase && (
             <>
               {caso.estado !== "Cálculo completo" ? (
                 <button
@@ -1176,7 +1462,7 @@ function CaseDetailPage() {
               ) : (
                 <div className="flex gap-2">
                   <button className="button-primary" onClick={() => openTransfer("FIS")}>Traspasar a FIS</button>
-                  <button className="button-secondary" onClick={() => openTransfer("Logistic")}>Traspasar a Logistic</button>
+                  <button className="button-secondary" onClick={() => openTransfer("Lawgistic")}>Traspasar a Lawgistic</button>
                 </div>
               )}
             </>
@@ -1202,14 +1488,67 @@ function CaseDetailPage() {
               </button>
             </div>
           )}
+          {usuario.role === "Gerente" && (
+            <div className="revert-box">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <ClipboardCheck size={15} /> Asignación de inspección
+              </div>
+              <select className="input mt-2" value={inspectorDraft} onChange={(event) => setInspectorDraft(event.target.value)}>
+                <option value="">Sin inspector asignado</option>
+                {INSPECTORS.map((inspector) => <option key={inspector}>{inspector}</option>)}
+              </select>
+              <button className="button-secondary mt-2 w-full" onClick={saveInspectorAssignment}>
+                <Save size={16} /> Guardar asignación
+              </button>
+              {inspectorNotice && <p className="text-xs text-slate-500">{inspectorNotice}</p>}
+            </div>
+          )}
         </div>
       </section>
+
+      {isEditingCase && (
+        <section className="panel case-edit-panel">
+          <div className="panel-title">
+            <div>
+              <h3>Editar datos clave</h3>
+              <p>Los cambios actualizan la prescripción y quedan registrados en el historial del caso.</p>
+            </div>
+            <StatusPill label="Revisión humana" tone="warn" />
+          </div>
+          {editError && <div className="form-error">{editError}</div>}
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Referencia interna *">
+              <input className="input" value={editReference} onChange={(event) => setEditReference(event.target.value)} autoFocus />
+            </Field>
+            <Field label="Jurisdicción">
+              <select className="input" value={editJurisdiccion} onChange={(event) => setEditJurisdiccion(event.target.value as Jurisdiccion | "")}>
+                <option value="">Sin definir</option>
+                <option value="LaHaya">La Haya · 1 año</option>
+                <option value="Hamburgo">Hamburgo · 2 años Chile/Perú</option>
+              </select>
+            </Field>
+            <Field label={editDateType === "ETA" ? "ETA de descarga" : "Fecha de descarga efectiva"}>
+              <input className="input" type="date" value={editDateOfDischarge} onChange={(event) => setEditDateOfDischarge(event.target.value)} />
+            </Field>
+            <Field label="Tipo de fecha">
+              <select className="input" value={editDateType} onChange={(event) => setEditDateType(event.target.value as DischargeDateType)}>
+                <option value="Real">Fecha efectiva de descarga</option>
+                <option value="ETA">ETA estimada</option>
+              </select>
+            </Field>
+          </div>
+          <div className="mt-5 flex flex-wrap justify-end gap-3">
+            <button className="button-secondary" onClick={cancelCaseEdit}><X size={16} /> Cancelar</button>
+            <button className="button-primary" onClick={saveCaseDetails}><Save size={16} /> Guardar cambios</button>
+          </div>
+        </section>
+      )}
 
       <div className="case-summary-grid">
         <CaseSummaryMetric
           label="Riesgo de prescripción"
           value={pres.label}
-          detail={caso.fechaPrescripcion ? `Vence ${new Date(caso.fechaPrescripcion).toLocaleDateString("es-CL")}` : "Fecha o jurisdicción pendiente"}
+          detail={caso.fechaPrescripcion ? `${caso.dateOfDischargeType === "ETA" ? "Estimación según ETA · vence" : "Vence"} ${new Date(caso.fechaPrescripcion).toLocaleDateString("es-CL")}` : "Fecha o jurisdicción pendiente"}
           icon={<AlertTriangle size={19} />}
           tone={pres.tone === "danger" ? "danger" : pres.tone === "warn" ? "warn" : "ok"}
         />
@@ -1218,7 +1557,7 @@ function CaseDetailPage() {
           value={`${staleDays} días`}
           detail={`Último cambio ${new Date(caso.ultimaActualizacion).toLocaleDateString("es-CL")}`}
           icon={<CalendarClock size={19} />}
-          tone={staleDays >= 14 ? "warn" : "ok"}
+          tone={staleDays > INACTIVITY_ALERT_DAYS ? "warn" : "ok"}
         />
         <CaseSummaryMetric
           label="Recupero estimado"
@@ -1252,9 +1591,14 @@ function CaseDetailPage() {
       {showTransfer && (
         <Modal title="Confirmar traspaso" onClose={() => setShowTransfer(null)}>
           <p className="mb-4">
-            Revisa el informe antes de confirmar. El traspaso es simulado y bloqueará la edición de la pestaña Cálculo.
+            Revisa el informe antes de confirmar. El traspaso es simulado y bloqueará la edición de todo el expediente.
           </p>
           {caso.informeRevision && <ReviewReportContent report={caso.informeRevision} compact />}
+          {caso.informeRevision && !caso.informeRevision.ready && (
+            <div className="form-error mt-4" role="alert">
+              Traspaso bloqueado: resuelve las {caso.informeRevision.pendingActions.length} observaciones del informe antes de derivar el caso.
+            </div>
+          )}
           <div className="mt-5 flex justify-end gap-3">
             <button className="button-secondary" onClick={() => setShowTransfer(null)}>Cancelar</button>
             {caso.informeRevision && (
@@ -1265,8 +1609,8 @@ function CaseDetailPage() {
                 >
                   <Download size={16} /> Descargar informe
                 </button>
-                <button className="button-primary" onClick={confirmTransfer}>
-                  <Check size={16} /> Confirmar con {caso.informeRevision.ready ? "informe listo" : "observaciones"}
+                <button className="button-primary" disabled={!caso.informeRevision.ready} onClick={confirmTransfer} title={caso.informeRevision.ready ? "Confirmar traspaso" : "Resuelve las observaciones antes de traspasar"}>
+                  <Check size={16} /> Confirmar traspaso
                 </button>
               </>
             )}
@@ -1282,19 +1626,20 @@ function CaseDetailPage() {
           ["informe", "Informe", <FileCheck2 size={16} key="i" />],
           ["historial", "Historial", <History size={16} key="i" />],
           ["cartas", "Cartas", <FileText size={16} key="i" />]
-        ].map(([key, label, icon]) => (
-          <button key={String(key)} className={cx("tab", tab === key && "active")} onClick={() => changeTab(String(key))}>
+        ].filter(([, key]) => !isInspector || key === "Inspección").concat((usuario.role === "Inspector" || usuario.role === "Gerente") ? [["inspeccion", "Inspección", <ClipboardCheck size={16} key="i" />] as const] : []).map(([key, label, icon]) => (
+          <button key={String(key)} className={cx("tab", activeTab === key && "active")} onClick={() => changeTab(String(key))}>
             {icon} {label}
           </button>
         ))}
       </div>
 
-      {tab === "documentos" && <DocumentsTab caso={caso} docs={caseDocs} canWrite={canWrite} />}
-      {tab === "analisis" && <AnalysisTab caso={caso} docs={caseDocs} canWrite={canWrite} />}
-      {tab === "calculo" && <CalculationTab caso={caso} calculo={calculo} canWrite={canWrite && canEditCalculation(caso)} />}
-      {tab === "informe" && <ReviewReportTab caso={caso} docs={caseDocs} calculo={calculo} canWrite={canWrite} />}
-      {tab === "historial" && <HistoryTab events={events} />}
-      {tab === "cartas" && <LettersTab caso={caso} docs={caseDocs} canWrite={canWrite} />}
+      {!isInspector && tab === "documentos" && <DocumentsTab caso={caso} docs={caseDocs} canWrite={canMutateCase} />}
+      {!isInspector && tab === "analisis" && <AnalysisTab caso={caso} docs={caseDocs} canWrite={canMutateCase} />}
+      {!isInspector && tab === "calculo" && <CalculationTab caso={caso} calculo={calculo} canWrite={canWrite && canEditCalculation(caso)} />}
+      {!isInspector && tab === "informe" && <ReviewReportTab caso={caso} docs={caseDocs} calculo={calculo} canWrite={canMutateCase} />}
+      {!isInspector && tab === "historial" && <HistoryTab events={events} />}
+      {!isInspector && tab === "cartas" && <LettersTab caso={caso} docs={caseDocs} canWrite={canMutateCase} />}
+      {(isInspector || usuario.role === "Gerente") && activeTab === "inspeccion" && <InspectionTab caso={caso} canWrite={isInspector && !isTransferred} />}
     </AppShell>
   );
 }
@@ -1487,7 +1832,7 @@ function DocumentsTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<t
                   <div key={`${draft.originalName}-${index}`} className="upload-draft">
                     <div>
                       <p className="font-semibold">{draft.originalName}</p>
-                      <p className="text-xs text-slate-500">{draft.estadoExtraccion || "Pendiente"} · {draft.relativePath || draft.originalName}</p>
+                      <p className="text-xs text-slate-500">{draft.estadoExtraccion || "Pendiente"} · Clasificación {draft.clasificacionConfianza || "Baja"} · {draft.relativePath || draft.originalName}</p>
                     </div>
                     <select
                       className="input w-72"
@@ -1571,7 +1916,13 @@ function DocumentsTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<t
                 <p className="text-xs text-slate-500">{doc.tipoDocumento} · {doc.pathMock}</p>
               </div>
               {canWrite && (
-                <button className="icon-button" title="Eliminar documento" onClick={() => removeDocument(doc.id)}>
+                <button
+                  className="icon-button"
+                  title="Eliminar documento"
+                  onClick={() => {
+                    if (window.confirm(`¿Eliminar ${doc.nombreArchivo} del expediente? Esta acción quedará registrada en el historial.`)) removeDocument(doc.id);
+                  }}
+                >
                   <X size={16} />
                 </button>
               )}
@@ -1602,18 +1953,24 @@ function DocumentsTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<t
 }
 
 function MissingDocsText({ caso, missing }: { caso: Caso; missing: DocumentType[] }) {
+  const [copyState, setCopyState] = useState<"idle" | "success" | "error">("idle");
   const text =
     missing.length === 0
       ? `Caso ${caso.id}: documentación completa para revisión preclaim.`
       : `Caso ${caso.id}: favor remitir los siguientes documentos pendientes para continuar el análisis preclaim:\n\n${missing.map((item) => `- ${item}`).join("\n")}`;
+  const copy = async () => {
+    const copied = await copyText(text);
+    setCopyState(copied ? "success" : "error");
+  };
   return (
     <div className="mt-5 rounded-md border border-line bg-slate-50 p-4">
       <div className="mb-3 flex items-center justify-between">
         <strong>Texto para solicitar faltantes</strong>
-        <button className="button-secondary small" onClick={() => navigator.clipboard?.writeText(text)}>
-          <Copy size={15} /> Copiar
+        <button className="button-secondary small" onClick={copy}>
+          <Copy size={15} /> {copyState === "success" ? "Copiado" : "Copiar"}
         </button>
       </div>
+      {copyState === "error" && <p className="form-error mb-3">No fue posible copiar automáticamente. Selecciona el texto y cópialo manualmente.</p>}
       <pre className="whitespace-pre-wrap text-sm text-slate-700">{text}</pre>
     </div>
   );
@@ -1692,48 +2049,20 @@ function AnalysisTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<ty
 }
 
 function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calculo?: CalculoPerdida; canWrite: boolean }) {
-  const { saveCalculation } = useDemoStore();
+  const { saveCalculation, calculationMethods } = useDemoStore();
   const [form, setForm] = useState<CalculoPerdida>(
     calculo || {
       casoId: caso.id,
       moneda: "USD",
+      monedaOrigen: "USD",
+      tipoCambioFecha: new Date().toISOString().slice(0, 10),
       rubrosAdicionales: [],
       ventaAFirme: false,
       updatedAt: new Date().toISOString()
     }
   );
   const [error, setError] = useState("");
-  const computed = useMemo(() => {
-    const base = {
-      ...form,
-      metodo1_resultado:
-        form.metodo1_liquidacionComparativa !== undefined && form.metodo1_liquidacionReal !== undefined
-          ? form.metodo1_liquidacionComparativa - form.metodo1_liquidacionReal
-          : undefined,
-      metodo2_resultado:
-        form.metodo2_valorReporteMercado !== undefined && form.metodo2_liquidacionReal !== undefined
-          ? form.metodo2_valorReporteMercado - form.metodo2_liquidacionReal
-          : undefined,
-      metodo3_resultado:
-        form.metodo3_valorFactura !== undefined && form.metodo3_ventaBrutaDestino !== undefined
-          ? form.metodo3_valorFactura - form.metodo3_ventaBrutaDestino
-          : undefined
-    };
-    const selected = form.ventaAFirme
-      ? form.notaCreditoValor
-      : form.metodoSeleccionado === "1"
-        ? base.metodo1_resultado
-        : form.metodoSeleccionado === "2"
-          ? base.metodo2_resultado
-          : form.metodoSeleccionado === "3"
-            ? base.metodo3_resultado
-            : undefined;
-    return {
-      ...base,
-      montoFinalReclamo:
-        selected !== undefined ? selected + form.rubrosAdicionales.reduce((sum, rubro) => sum + rubro.monto, 0) : undefined
-    };
-  }, [form]);
+  const computed = useMemo(() => calculateLoss(form), [form]);
   const updateNumber = (key: keyof CalculoPerdida, value: string) => {
     setForm((current) => ({ ...current, [key]: value === "" ? undefined : Number(value) }));
   };
@@ -1753,6 +2082,10 @@ function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calculo?: Cal
     setForm((current) => ({
       ...current,
       moneda: caso.propuestaPerdida?.moneda || current.moneda,
+      monedaOrigen: caso.propuestaPerdida?.monedaOrigen || caso.propuestaPerdida?.moneda || current.monedaOrigen || current.moneda,
+      tipoCambio: caso.propuestaPerdida?.tipoCambio,
+      tipoCambioFecha: caso.propuestaPerdida?.tipoCambioFecha || current.tipoCambioFecha || new Date().toISOString().slice(0, 10),
+      tipoCambioFuente: caso.propuestaPerdida?.tipoCambioFuente || current.tipoCambioFuente,
       metodo1_liquidacionReal: caso.propuestaPerdida?.metodo1_liquidacionReal,
       metodo1_liquidacionComparativa: caso.propuestaPerdida?.metodo1_liquidacionComparativa,
       metodo2_valorReporteMercado: caso.propuestaPerdida?.metodo2_valorReporteMercado,
@@ -1760,15 +2093,27 @@ function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calculo?: Cal
       metodo3_valorFactura: caso.propuestaPerdida?.metodo3_valorFactura,
       metodo3_ventaBrutaDestino: caso.propuestaPerdida?.metodo3_ventaBrutaDestino,
       rubrosAdicionales: caso.propuestaPerdida?.rubrosAdicionales || [],
+      fuentes: caso.propuestaPerdida?.fuentes || [],
       metodoSeleccionado: undefined,
       justificacionSeleccion: ""
     }));
   };
   const methods = [
-    { id: "1" as const, title: "Método 1 · SMV", result: computed.metodo1_resultado, formula: "liquidación comparativa - liquidación real" },
-    { id: "2" as const, title: "Método 2 · Mercado", result: computed.metodo2_resultado, formula: "valor reporte mercado - liquidación real" },
-    { id: "3" as const, title: "Método 3 · Factura vs. venta", result: computed.metodo3_resultado, formula: "valor factura exportación - venta bruta destino" }
-  ].sort((a, b) => (b.result ?? -Infinity) - (a.result ?? -Infinity));
+    { id: "1" as const, fallbackTitle: "Método 1 · Embarque comparable", result: computed.metodo1_resultado, fallbackFormula: "liquidación comparativa - liquidación real" },
+    { id: "2" as const, fallbackTitle: "Método 2 · Reporte de mercado", result: computed.metodo2_resultado, fallbackFormula: "valor reporte mercado - liquidación real" },
+    { id: "3" as const, fallbackTitle: "Método 3 · Factura vs. venta", result: computed.metodo3_resultado, fallbackFormula: "valor factura exportación - venta destino" }
+  ].map((method) => {
+    const config = calculationMethods.find((item) => item.id === method.id);
+    return {
+      ...method,
+      title: config?.title || method.fallbackTitle,
+      formula: config?.formula || method.fallbackFormula,
+      description: config?.description || "Método contractual disponible.",
+      active: config?.active ?? true
+    };
+  })
+    .sort((a, b) => (b.result ?? -Infinity) - (a.result ?? -Infinity));
+  const firmMethod = calculationMethods.find((method) => method.id === "firm");
   return (
     <form className="space-y-5" onSubmit={save}>
       <div className="panel">
@@ -1776,7 +2121,10 @@ function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calculo?: Cal
           <h3>Cálculo de pérdida</h3>
           <span>{canWrite ? "Editable" : "Solo lectura"}</span>
         </div>
-        {!canWrite && <ReadonlyBanner text={caso.estado.includes("Traspasado") ? "El caso fue traspasado; la edición de cálculo está bloqueada." : undefined} />}
+        {!canWrite && <ReadonlyBanner text={caso.estado.includes("Traspasado") ? "El caso fue traspasado; la edición de todo el expediente está bloqueada." : undefined} />}
+        <div className="notice">
+          Cada resultado es una recomendación preliminar. Antes de guardar, verifica los valores y el documento que sustenta el método elegido.
+        </div>
         <div className="analysis-card">
           <strong>Conclusión de causa de daño</strong>
           <p>{caso.analisisCausa?.conclusionFinal || "Sin conclusión confirmada todavía."}</p>
@@ -1800,45 +2148,66 @@ function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calculo?: Cal
         )}
         {error && <div className="form-error">{error}</div>}
         <div className="grid gap-4 md:grid-cols-3">
-          <Field label="Moneda">
-            <select className="input" disabled={!canWrite} value={form.moneda} onChange={(event) => setForm((current) => ({ ...current, moneda: event.target.value as "USD" | "CLP" }))}>
-              <option>USD</option>
-              <option>CLP</option>
+          <Field label="Moneda de origen">
+            <select className="input" disabled={!canWrite} value={form.monedaOrigen || form.moneda} onChange={(event) => setForm((current) => ({ ...current, monedaOrigen: event.target.value as CurrencyCode }))}>
+              <option value="USD">USD · dólar estadounidense</option>
+              <option value="CLP">CLP · peso chileno</option>
+              <option value="EUR">EUR · euro</option>
             </select>
           </Field>
-          {form.moneda === "CLP" && (
-            <Field label="Tipo de cambio referencial">
-              <input className="input" disabled={!canWrite} type="number" value={form.tipoCambio || ""} onChange={(event) => updateNumber("tipoCambio", event.target.value)} />
-            </Field>
-          )}
+          <Field label="Moneda de cálculo">
+            <select className="input" disabled={!canWrite} value={form.moneda} onChange={(event) => setForm((current) => ({ ...current, moneda: event.target.value as CurrencyCode }))}>
+              <option value="USD">USD · dólar estadounidense</option>
+              <option value="CLP">CLP · peso chileno</option>
+              <option value="EUR">EUR · euro</option>
+            </select>
+          </Field>
           <label className="checkbox-field">
-            <input type="checkbox" disabled={!canWrite} checked={form.ventaAFirme} onChange={(event) => setForm((current) => ({ ...current, ventaAFirme: event.target.checked }))} />
-            Venta a firme
+            <input type="checkbox" disabled={!canWrite || firmMethod?.active === false} checked={form.ventaAFirme} onChange={(event) => setForm((current) => ({ ...current, ventaAFirme: event.target.checked }))} />
+            {firmMethod?.title || "Venta a firme · nota de crédito"}
           </label>
         </div>
+        {form.monedaOrigen !== form.moneda && (
+          <div className="mt-4">
+            <div className="grid gap-4 md:grid-cols-3">
+              <Field label={`Tipo de cambio · 1 ${form.monedaOrigen || form.moneda} = X ${form.moneda}`}>
+                <input className="input" disabled={!canWrite} min="0" step="any" type="number" value={form.tipoCambio || ""} onChange={(event) => updateNumber("tipoCambio", event.target.value)} placeholder="Ej. 0,0011" />
+              </Field>
+              <Field label="Fecha del tipo de cambio">
+                <input className="input" disabled={!canWrite} type="date" value={form.tipoCambioFecha || ""} onChange={(event) => setForm((current) => ({ ...current, tipoCambioFecha: event.target.value }))} />
+              </Field>
+              <Field label="Fuente o criterio">
+                <input className="input" disabled={!canWrite} value={form.tipoCambioFuente || ""} onChange={(event) => setForm((current) => ({ ...current, tipoCambioFuente: event.target.value }))} placeholder="Ej. Banco Central / tasa configurada" />
+              </Field>
+            </div>
+            <p className="notice mt-3">Los valores de respaldo se ingresan en {form.monedaOrigen} y los resultados se muestran en {form.moneda}. La conversión se aplica antes de comparar.</p>
+          </div>
+        )}
+        {form.monedaOrigen === form.moneda && <p className="notice mt-3">Los valores de respaldo y el resultado están expresados en {form.moneda}; no se requiere conversión.</p>}
+        {form.fuentes && form.fuentes.length > 0 && <p className="history-source-note">Valores cargados desde: {form.fuentes.join(", ")}</p>}
       </div>
 
       {form.ventaAFirme ? (
         <div className="panel">
           <Field label="Valor nota de crédito">
-            <input className="input" disabled={!canWrite} type="number" value={form.notaCreditoValor || ""} onChange={(event) => updateNumber("notaCreditoValor", event.target.value)} />
+            <input className="input" disabled={!canWrite} type="number" value={form.notaCreditoValor || ""} onChange={(event) => updateNumber("notaCreditoValor", event.target.value)} placeholder={`Monto en ${form.monedaOrigen || form.moneda}`} />
           </Field>
           <FinalClaim value={computed.montoFinalReclamo} moneda={form.moneda} />
         </div>
       ) : (
         <>
           <div className="grid gap-5 lg:grid-cols-3">
-            <MethodInputs title="Método 1 · Sound Market Value">
-              <NumberField label="Liquidación real" disabled={!canWrite} value={form.metodo1_liquidacionReal} onChange={(value) => updateNumber("metodo1_liquidacionReal", value)} />
-              <NumberField label="Liquidación comparativa" disabled={!canWrite} value={form.metodo1_liquidacionComparativa} onChange={(value) => updateNumber("metodo1_liquidacionComparativa", value)} />
+            <MethodInputs title={calculationMethods.find((method) => method.id === "1")?.title || "Método 1 · Embarque comparable"}>
+              <NumberField label={`Liquidación real (${form.monedaOrigen || form.moneda})`} disabled={!canWrite} value={form.metodo1_liquidacionReal} onChange={(value) => updateNumber("metodo1_liquidacionReal", value)} />
+              <NumberField label={`Liquidación comparativa (${form.monedaOrigen || form.moneda})`} disabled={!canWrite} value={form.metodo1_liquidacionComparativa} onChange={(value) => updateNumber("metodo1_liquidacionComparativa", value)} />
             </MethodInputs>
-            <MethodInputs title="Método 2 · Reporte de mercado">
-              <NumberField label="Valor reporte mercado" disabled={!canWrite} value={form.metodo2_valorReporteMercado} onChange={(value) => updateNumber("metodo2_valorReporteMercado", value)} />
-              <NumberField label="Liquidación real" disabled={!canWrite} value={form.metodo2_liquidacionReal} onChange={(value) => updateNumber("metodo2_liquidacionReal", value)} />
+            <MethodInputs title={calculationMethods.find((method) => method.id === "2")?.title || "Método 2 · Reporte de mercado"}>
+              <NumberField label={`Valor reporte mercado (${form.monedaOrigen || form.moneda})`} disabled={!canWrite} value={form.metodo2_valorReporteMercado} onChange={(value) => updateNumber("metodo2_valorReporteMercado", value)} />
+              <NumberField label={`Liquidación real (${form.monedaOrigen || form.moneda})`} disabled={!canWrite} value={form.metodo2_liquidacionReal} onChange={(value) => updateNumber("metodo2_liquidacionReal", value)} />
             </MethodInputs>
-            <MethodInputs title="Método 3 · Factura vs. venta">
-              <NumberField label="Valor factura exportación" disabled={!canWrite} value={form.metodo3_valorFactura} onChange={(value) => updateNumber("metodo3_valorFactura", value)} />
-              <NumberField label="Venta bruta destino" disabled={!canWrite} value={form.metodo3_ventaBrutaDestino} onChange={(value) => updateNumber("metodo3_ventaBrutaDestino", value)} />
+            <MethodInputs title={calculationMethods.find((method) => method.id === "3")?.title || "Método 3 · Factura vs. venta"}>
+              <NumberField label={`Valor factura exportación (${form.monedaOrigen || form.moneda})`} disabled={!canWrite} value={form.metodo3_valorFactura} onChange={(value) => updateNumber("metodo3_valorFactura", value)} />
+              <NumberField label={`Venta bruta destino (${form.monedaOrigen || form.moneda})`} disabled={!canWrite} value={form.metodo3_ventaBrutaDestino} onChange={(value) => updateNumber("metodo3_ventaBrutaDestino", value)} />
             </MethodInputs>
           </div>
           <div className="panel">
@@ -1851,13 +2220,13 @@ function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calculo?: Cal
                 <button
                   type="button"
                   key={method.id}
-                  disabled={!canWrite || method.result === undefined}
+                  disabled={!canWrite || !method.active || method.result === undefined}
                   className={cx("method-card", form.metodoSeleccionado === method.id && "selected")}
                   onClick={() => setForm((current) => ({ ...current, metodoSeleccionado: method.id }))}
                 >
                   <span>{method.title}</span>
                   <strong>{currency(method.result, form.moneda)}</strong>
-                  <small>{method.result === undefined ? "Sin datos" : method.formula}</small>
+                  <small>{!method.active ? "Inactivo en mantenedor" : method.result === undefined ? "Sin datos" : method.formula}</small>
                 </button>
               ))}
             </div>
@@ -1920,7 +2289,7 @@ function NumberField({ label, value, disabled, onChange }: { label: string; valu
   );
 }
 
-function FinalClaim({ value, moneda }: { value?: number; moneda: "USD" | "CLP" }) {
+function FinalClaim({ value, moneda }: { value?: number; moneda: CurrencyCode }) {
   return (
     <div className="final-claim">
       <span>Monto final a reclamar</span>
@@ -1940,7 +2309,7 @@ function ReviewReportTab({
   calculo?: CalculoPerdida;
   canWrite: boolean;
 }) {
-  const { generateReviewReport } = useDemoStore();
+  const { bitacora, generateReviewReport } = useDemoStore();
   const [destination, setDestination] = useState<TransferDestination>(caso.informeRevision?.destination || "FIS");
   const report = caso.informeRevision;
 
@@ -1949,6 +2318,7 @@ function ReviewReportTab({
     if (!report) return;
     downloadTextFile(`${caso.id}_informe_revision_${report.destination}.txt`, buildReviewReportText(report));
   };
+  const exportCase = () => exportCaseTrackingXlsx([caso], docs, calculo ? [calculo] : [], bitacora, `${caso.id}_seguimiento.xlsx`);
 
   return (
     <section className="space-y-5">
@@ -1968,7 +2338,7 @@ function ReviewReportTab({
             onChange={(event) => setDestination(event.target.value as TransferDestination)}
           >
             <option value="FIS">FIS · recupero extrajudicial</option>
-            <option value="Logistic">Logistic · recupero judicial</option>
+            <option value="Lawgistic">Lawgistic · recupero judicial</option>
           </select>
           <button className="button-primary" type="button" disabled={!canWrite} onClick={generate}>
             <FileCheck2 size={17} /> Generar informe
@@ -1978,6 +2348,9 @@ function ReviewReportTab({
               <Download size={17} /> Descargar
             </button>
           )}
+          <button className="button-secondary" type="button" onClick={exportCase}>
+            <Download size={17} /> Exportar Excel
+          </button>
         </div>
       </section>
 
@@ -2090,53 +2463,434 @@ function HistoryTab({ events }: { events: ReturnType<typeof useDemoStore.getStat
   );
 }
 
-function LettersTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<typeof useDemoStore.getState>["documentos"]; canWrite: boolean }) {
-  const { registerLetter } = useDemoStore();
-  const hasBl = docs.some((doc) => doc.tipoDocumento === "BL");
-  const initial = `Sres. ${pendingField(caso.opponent)}
-
-Por medio de la presente notificamos formalmente un reclamo preliminar asociado al embarque transportado en la nave ${pendingField(caso.vessel)}, viaje ${pendingField(caso.voyage)}, descargado en ${pendingField(caso.placeOfDischarge)} con fecha ${pendingField(caso.dateOfDischarge)}.
-
-Reference No: ${pendingField(caso.id)}
-CS Claim No: ${pendingField(caso.csClaimNo)}
-Asegurado: ${pendingField(caso.assured)}
-Monto reclamado preliminar: ${pendingField(caso.claimAmount)}
-Documento BL: ${hasBl ? "Cargado en expediente demo" : "[PENDIENTE COMPLETAR: BL no cargado]"}
-
-Solicitamos mantener a resguardo todos los antecedentes y confirmar recepción de esta notificación.
-
-Atentamente,
-Intervent Preclaim`;
-  const [text, setText] = useState(initial);
-  const copy = () => {
-    navigator.clipboard?.writeText(text);
-    registerLetter(caso.id, "Carta de notificación a la naviera copiada al portapapeles.");
+function InspectionTab({ caso, canWrite }: { caso: Caso; canWrite: boolean }) {
+  const { saveInspection } = useDemoStore();
+  const [date, setDate] = useState(caso.fechaInspeccion || "");
+  const [jointInspection, setJointInspection] = useState(caso.inspeccionConjunta === undefined ? "" : String(caso.inspeccionConjunta));
+  const [summary, setSummary] = useState(caso.resumenInspeccion || "");
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+  const save = () => {
+    const result = saveInspection(caso.id, {
+      fechaInspeccion: date,
+      inspeccionConjunta: jointInspection === "" ? undefined : jointInspection === "true",
+      resumenInspeccion: summary
+    });
+    setError(result.ok ? "" : result.error || "No se pudo guardar la inspección.");
+    setNotice(result.ok ? "Inspección registrada en la bitácora del caso." : "");
   };
-  const download = () => {
-    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${caso.id.replace(/[^\w-]+/g, "-")}_notificacion_naviera.txt`;
-    link.click();
-    URL.revokeObjectURL(url);
-    registerLetter(caso.id, "Carta de notificación a la naviera descargada como TXT.");
+  const downloadJsi = () => {
+    const safeId = caso.id.replace(/[^\w-]+/g, "-");
+    downloadHtmlFile(`${safeId}_carta_jsi.html`, buildJointInspectionLetter({
+      ...caso,
+      fechaInspeccion: date || caso.fechaInspeccion,
+      inspeccionConjunta: jointInspection === "" ? caso.inspeccionConjunta : jointInspection === "true",
+      resumenInspeccion: summary || caso.resumenInspeccion
+    }));
   };
   return (
-    <section className="panel">
-      <div className="panel-title">
-        <h3>Cartas automatizadas</h3>
-        <span>Carta de notificación a la naviera</span>
+    <section className="inspection-workspace">
+      <div className="panel">
+        <div className="panel-title">
+          <div>
+            <p className="eyebrow">Operación de inspección</p>
+            <h3>Registro de inspección</h3>
+          </div>
+          <StatusPill label={canWrite ? "Edición del inspector" : "Solo lectura"} tone={canWrite ? "ok" : "missing"} />
+        </div>
+        {!canWrite && <ReadonlyBanner text="Solo el inspector asignado puede registrar o modificar estos antecedentes." />}
+        {error && <div className="form-error">{error}</div>}
+        {notice && <div className="notice">{notice}</div>}
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label="Fecha de inspección *">
+            <input className="input" type="date" disabled={!canWrite} value={date} onChange={(event) => setDate(event.target.value)} />
+          </Field>
+          <Field label="¿Inspección conjunta con la naviera? *">
+            <select className="input" disabled={!canWrite} value={jointInspection} onChange={(event) => setJointInspection(event.target.value)}>
+              <option value="">Seleccionar</option>
+              <option value="true">Sí</option>
+              <option value="false">No</option>
+            </select>
+          </Field>
+        </div>
+        <Field label="Resumen de lo observado">
+          <textarea className="input min-h-36" disabled={!canWrite} value={summary} onChange={(event) => setSummary(event.target.value)} placeholder="Describe los principales hallazgos de la inspección." />
+        </Field>
+        <div className="mt-5 flex flex-wrap justify-end gap-3">
+          <button className="button-secondary" type="button" onClick={downloadJsi}><Download size={16} /> Descargar Carta JSI</button>
+          {canWrite && <button className="button-primary" type="button" onClick={save}><Save size={16} /> Guardar inspección</button>}
+        </div>
       </div>
-      {!canWrite && <ReadonlyBanner />}
-      <textarea className="input min-h-[420px] font-mono text-sm" disabled={!canWrite} value={text} onChange={(event) => setText(event.target.value)} />
-      <div className="mt-4 flex flex-wrap justify-end gap-3">
-        <button className="button-secondary" type="button" onClick={copy}>
-          <Copy size={17} /> Copiar
+      <div className="panel inspection-context-panel">
+        <div className="panel-title">
+          <div>
+            <h3>Antecedentes del caso</h3>
+            <p>Información disponible para preparar la notificación.</p>
+          </div>
+          <ClipboardCheck size={20} />
+        </div>
+        <div className="history-detail-grid">
+          <HistoricalValue label="Referencia" value={caso.id} />
+          <HistoricalValue label="Asegurado" value={caso.assured} />
+          <HistoricalValue label="Oponente" value={caso.opponent} />
+          <HistoricalValue label="Nave / viaje" value={`${caso.vessel || "Sin nave"} / ${caso.voyage || "Sin viaje"}`} />
+          <HistoricalValue label="Lugar de descarga" value={caso.placeOfDischarge} />
+          <HistoricalValue label="Inspector asignado" value={caso.inspectorAsignado} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function LettersTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<typeof useDemoStore.getState>["documentos"]; canWrite: boolean }) {
+  const { registerLetter, calculosPerdida, templateConfigs } = useDemoStore();
+  const calculo = calculosPerdida.find((item) => item.casoId === caso.id);
+  const configuredTemplates = LETTER_TEMPLATES.map((item) => getLetterTemplate(item.id, templateConfigs));
+  const firstActiveTemplate = configuredTemplates.find((item) => item.active) || configuredTemplates[0];
+  const [templateId, setTemplateId] = useState<LetterTemplateId>(firstActiveTemplate.id);
+  const [text, setText] = useState(() => buildLetterTemplate(firstActiveTemplate.id, { caso, docs, calculo }, templateConfigs));
+  const template = getLetterTemplate(templateId, templateConfigs);
+  const conflicts = templateConflicts({ caso, docs, calculo });
+  const context = { caso, docs, calculo };
+  const [copyState, setCopyState] = useState<"idle" | "success" | "error">("idle");
+
+  const changeTemplate = (nextId: LetterTemplateId) => {
+    const nextTemplate = getLetterTemplate(nextId, templateConfigs);
+    if (!nextTemplate.active) return;
+    setTemplateId(nextId);
+    setText(buildLetterTemplate(nextId, context, templateConfigs));
+  };
+  const resetTemplate = () => setText(buildLetterTemplate(templateId, context, templateConfigs));
+  const copy = async () => {
+    const copied = await copyText(text);
+    setCopyState(copied ? "success" : "error");
+    if (copied) registerLetter(caso.id, `${template.title} copiado al portapapeles.`);
+  };
+  const download = () => {
+    const safeId = caso.id.replace(/[^\w-]+/g, "-");
+    downloadHtmlFile(`${safeId}_${template.shortTitle.replace(/\s+/g, "_").toLowerCase()}.html`, buildPrintableHtml(template, text));
+    registerLetter(caso.id, `${template.title} descargado como documento imprimible.`);
+  };
+  const print = () => {
+    if (printHtmlFile(buildPrintableHtml(template, text))) {
+      registerLetter(caso.id, `${template.title} enviado a impresión / guardado como PDF.`);
+    }
+  };
+  return (
+    <section className="letters-workspace">
+      <div className="panel letters-controls">
+        <div className="panel-title">
+          <div>
+            <p className="eyebrow">Templates base parametrizados</p>
+            <h3>Cartas automatizadas</h3>
+          </div>
+          <span>Revisión humana</span>
+        </div>
+        {!canWrite && <ReadonlyBanner />}
+          <Field label="Template contractual">
+          <select className="input" disabled={!canWrite} value={templateId} onChange={(event) => changeTemplate(event.target.value as LetterTemplateId)}>
+            {configuredTemplates.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.title} · {item.language}</option>)}
+          </select>
+        </Field>
+        <p className="template-description">{template.description}</p>
+        {!template.active && <div className="notice template-inactive">Este template está inactivo en el mantenedor y no puede seleccionarse para nuevas generaciones.</div>}
+        <div className="template-fields">
+          <span>Campos parametrizados</span>
+          <div>{template.fields.map((field) => <small key={field}>{field}</small>)}</div>
+        </div>
+        {conflicts.length > 0 && (
+          <div className="form-error template-conflicts">
+            <strong>Revisión requerida</strong>
+            {conflicts.map((conflict) => <span key={conflict}>{conflict}</span>)}
+            <small>El sistema usa el primer valor detectado hasta que el handler lo corrija.</small>
+          </div>
+        )}
+        <div className="template-editor-heading">
+          <div>
+            <strong>Contenido editable</strong>
+            <small>Los campos pendientes deben completarse antes de usar el documento.</small>
+          </div>
+          {canWrite && <button type="button" className="button-secondary small" onClick={resetTemplate}><RefreshCcw size={15} /> Restablecer base</button>}
+        </div>
+        <textarea className="input template-editor" disabled={!canWrite} value={text} onChange={(event) => setText(event.target.value)} />
+        {copyState === "error" && <p className="form-error mt-3">No fue posible copiar automáticamente. Selecciona el contenido y cópialo manualmente.</p>}
+        <div className="mt-4 flex flex-wrap justify-end gap-3">
+          <button className="button-secondary" type="button" onClick={copy}><Copy size={17} /> {copyState === "success" ? "Copiado" : "Copiar"}</button>
+          <button className="button-secondary" type="button" onClick={print}><FileCheck2 size={17} /> Imprimir / PDF</button>
+          <button className="button-primary" type="button" onClick={download}><Download size={17} /> Descargar documento</button>
+        </div>
+      </div>
+      <div className="panel template-preview-panel">
+        <div className="panel-title">
+          <div>
+            <h3>Vista previa</h3>
+            <p>Formato listo para imprimir o guardar como PDF desde el navegador.</p>
+          </div>
+          <span>{template.shortTitle}</span>
+        </div>
+        <TemplatePreview text={text} />
+      </div>
+    </section>
+  );
+}
+
+function TemplatePreview({ text }: { text: string }) {
+  const blocks = text.split(/\n{2,}/);
+  return (
+    <article className="template-preview-sheet">
+      <header className="template-preview-brand">
+        <span className="template-preview-mark">IP</span>
+        <span><strong>FRUIT INSURANCE SERVICES</strong><small>CHILE · EST. 2015</small></span>
+      </header>
+      <div className="template-preview-copy">
+        {blocks.map((block, index) => <p key={`${index}-${block.slice(0, 20)}`}>{block.split("\n").map((line, lineIndex) => <span key={`${lineIndex}-${line.slice(0, 12)}`}>{line}{lineIndex < block.split("\n").length - 1 && <br />}</span>)}</p>)}
+      </div>
+      <footer>Intervent Preclaim · Documento generado para revisión humana</footer>
+    </article>
+  );
+}
+
+function MaintainersPage() {
+  const { usuario } = useDemoStore();
+  const [section, setSection] = useState<"calculos" | "templates">("calculos");
+  if (usuario.role === "Handler" || usuario.role === "Inspector") return <Navigate to="/dashboard" replace />;
+  const canEdit = usuario.role === "Gerente";
+
+  return (
+    <AppShell>
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Configuración controlada</p>
+          <h2>Mantenedores</h2>
+          <p className="section-subtitle">Administra los criterios visibles de cálculo y las bases documentales que usa el expediente.</p>
+        </div>
+        <StatusPill label={canEdit ? "Edición de gerencia" : "Solo lectura"} tone={canEdit ? "ok" : "missing"} />
+      </div>
+      {!canEdit && <ReadonlyBanner text="La configuración puede ser modificada por Gerente. Esta vista permite revisar los valores vigentes." />}
+      <div className="maintainer-tabs" role="tablist" aria-label="Secciones de mantenedores">
+        <button type="button" role="tab" aria-selected={section === "calculos"} className={cx("maintainer-tab", section === "calculos" && "active")} onClick={() => setSection("calculos")}>
+          <BarChart3 size={17} /> Cálculos
         </button>
-        <button className="button-primary" type="button" onClick={download}>
-          <Download size={17} /> Descargar
+        <button type="button" role="tab" aria-selected={section === "templates"} className={cx("maintainer-tab", section === "templates" && "active")} onClick={() => setSection("templates")}>
+          <FileText size={17} /> Templates
         </button>
+      </div>
+      {section === "calculos" ? <CalculationMaintainer canEdit={canEdit} /> : <TemplateMaintainer canEdit={canEdit} />}
+    </AppShell>
+  );
+}
+
+function CalculationMaintainer({ canEdit }: { canEdit: boolean }) {
+  const { calculationMethods, updateCalculationMethod, resetCalculationMethods } = useDemoStore();
+  const [drafts, setDrafts] = useState<CalculationMethodConfig[]>(calculationMethods);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    setDrafts(calculationMethods);
+  }, [calculationMethods]);
+
+  const updateDraft = (id: CalculationMethodId, patch: Partial<CalculationMethodConfig>) => {
+    setDrafts((current) => current.map((method) => method.id === id ? { ...method, ...patch } : method));
+    setNotice("");
+  };
+
+  const save = () => {
+    const invalid = drafts.find((method) => !method.title.trim() || !method.description.trim());
+    if (invalid) {
+      setError("Cada método debe tener un nombre y una descripción.");
+      return;
+    }
+    drafts.forEach((method) => updateCalculationMethod(method.id, {
+      title: method.title.trim(),
+      description: method.description.trim(),
+      active: method.active
+    }));
+    setError("");
+    setNotice("Mantenedor de cálculos actualizado. La lógica contractual permanece protegida.");
+  };
+
+  const reset = () => {
+    if (!window.confirm("¿Restablecer los nombres y descripciones base de los métodos?")) return;
+    resetCalculationMethods();
+    setError("");
+    setNotice("Se restauraron los valores base.");
+  };
+
+  return (
+    <section className="maintainer-section">
+      <div className="panel maintainer-intro">
+        <div>
+          <p className="eyebrow">Mantenedor de cálculo</p>
+          <h3>Criterios de pérdida disponibles</h3>
+          <p>Define cómo se presentan los métodos al handler y cuáles quedan habilitados para nuevos cálculos.</p>
+        </div>
+        <div className="maintainer-actions">
+          <button type="button" className="button-secondary" disabled={!canEdit} onClick={reset}><RefreshCcw size={16} /> Restaurar base</button>
+          <button type="button" className="button-primary" disabled={!canEdit} onClick={save}><Save size={16} /> Guardar cambios</button>
+        </div>
+      </div>
+      {error && <div className="form-error">{error}</div>}
+      {notice && <div className="notice maintainer-notice">{notice}</div>}
+      <div className="maintainer-method-grid">
+        {drafts.map((method) => (
+          <article className={cx("panel", "maintainer-card", !method.active && "inactive")} key={method.id}>
+            <div className="panel-title">
+              <div>
+                <span className="maintainer-code">{method.id === "firm" ? "VENTA FIRME" : `MÉTODO ${method.id}`}</span>
+                <h3>{method.title}</h3>
+              </div>
+              <label className="switch-field">
+                <input type="checkbox" disabled={!canEdit} checked={method.active} onChange={(event) => updateDraft(method.id, { active: event.target.checked })} />
+                <span>{method.active ? "Activo" : "Inactivo"}</span>
+              </label>
+            </div>
+            <div className="space-y-3">
+              <Field label="Nombre visible">
+                <input className="input" disabled={!canEdit} value={method.title} onChange={(event) => updateDraft(method.id, { title: event.target.value })} />
+              </Field>
+              <Field label="Descripción operativa">
+                <textarea className="input min-h-24" disabled={!canEdit} value={method.description} onChange={(event) => updateDraft(method.id, { description: event.target.value })} />
+              </Field>
+              <div className="protected-formula">
+                <span>Fórmula contractual</span>
+                <strong>{method.formula}</strong>
+                <small>La operación está protegida para conservar la trazabilidad del cálculo.</small>
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function TemplateMaintainer({ canEdit }: { canEdit: boolean }) {
+  const { templateConfigs, updateTemplateConfig, resetTemplateConfigs } = useDemoStore();
+  const [selectedId, setSelectedId] = useState<TemplateId>(templateConfigs[0]?.id || "claim-notice");
+  const selected = templateConfigs.find((template) => template.id === selectedId) || templateConfigs[0];
+  const [draft, setDraft] = useState<TemplateConfig | undefined>(selected);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    setDraft(selected);
+  }, [selected]);
+
+  const chooseTemplate = (id: TemplateId) => {
+    setSelectedId(id);
+    setError("");
+    setNotice("");
+  };
+
+  const updateDraft = (patch: Partial<TemplateConfig>) => {
+    setDraft((current) => current ? { ...current, ...patch } : current);
+    setNotice("");
+  };
+
+  const save = () => {
+    if (!draft) return;
+    if (!draft.title.trim() || !draft.shortTitle.trim() || !draft.description.trim() || !draft.baseContent.trim()) {
+      setError("Completa nombre, nombre corto, descripción y contenido base.");
+      return;
+    }
+    const tokenIssues = templateTokenIssues(draft.baseContent);
+    if (tokenIssues.unknown.length > 0 || tokenIssues.unmatchedBraces) {
+      setError(tokenIssues.unknown.length > 0
+        ? `El contenido contiene tokens no reconocidos: ${tokenIssues.unknown.map((token) => `{{${token}}}`).join(", ")}.`
+        : "Revisa que todos los tokens tengan apertura y cierre correcto.");
+      return;
+    }
+    updateTemplateConfig(draft.id, {
+      title: draft.title.trim(),
+      shortTitle: draft.shortTitle.trim(),
+      description: draft.description.trim(),
+      language: draft.language.trim() || "English",
+      baseContent: draft.baseContent,
+      active: draft.active
+    });
+    setError("");
+    setNotice("Template base actualizado. La próxima generación usará esta versión.");
+  };
+
+  const reset = () => {
+    if (!window.confirm("¿Restablecer todos los templates a su contenido base?")) return;
+    resetTemplateConfigs();
+    setError("");
+    setNotice("Se restauraron los templates base.");
+  };
+
+  return (
+    <section className="maintainer-section">
+      <div className="panel maintainer-intro">
+        <div>
+          <p className="eyebrow">Mantenedor de templates</p>
+          <h3>Documentos base parametrizados</h3>
+          <p>Administra el texto contractual que se propone en la pestaña Cartas, conservando los campos del expediente.</p>
+        </div>
+        <div className="maintainer-actions">
+          <button type="button" className="button-secondary" disabled={!canEdit} onClick={reset}><RefreshCcw size={16} /> Restaurar base</button>
+          <button type="button" className="button-primary" disabled={!canEdit || !draft} onClick={save}><Save size={16} /> Guardar template</button>
+        </div>
+      </div>
+      {error && <div className="form-error">{error}</div>}
+      {notice && <div className="notice maintainer-notice">{notice}</div>}
+      <div className="template-maintainer-layout">
+        <div className="panel template-maintainer-list">
+          <div className="panel-title">
+            <h3>Templates</h3>
+            <span>{templateConfigs.filter((template) => template.active).length} activos</span>
+          </div>
+          <div className="template-maintainer-options">
+            {templateConfigs.map((template) => (
+              <button type="button" key={template.id} className={cx("template-maintainer-option", selectedId === template.id && "selected")} onClick={() => chooseTemplate(template.id)}>
+                <span><strong>{template.title}</strong><small>{template.language}</small></span>
+                <StatusPill label={template.active ? "Activo" : "Inactivo"} tone={template.active ? "ok" : "missing"} />
+              </button>
+            ))}
+          </div>
+        </div>
+        {draft && (
+          <div className="panel template-maintainer-editor">
+            <div className="panel-title">
+              <div>
+                <span className="maintainer-code">{draft.id}</span>
+                <h3>{draft.title}</h3>
+              </div>
+              <label className="switch-field">
+                <input type="checkbox" disabled={!canEdit} checked={draft.active} onChange={(event) => updateDraft({ active: event.target.checked })} />
+                <span>{draft.active ? "Activo" : "Inactivo"}</span>
+              </label>
+            </div>
+            <p className="template-version">Versión {draft.version || 1} · Última actualización {new Date(draft.updatedAt).toLocaleString("es-CL")}</p>
+            <div className="grid gap-4 md:grid-cols-3">
+              <Field label="Nombre visible">
+                <input className="input" disabled={!canEdit} value={draft.title} onChange={(event) => updateDraft({ title: event.target.value })} />
+              </Field>
+              <Field label="Nombre corto">
+                <input className="input" disabled={!canEdit} value={draft.shortTitle} onChange={(event) => updateDraft({ shortTitle: event.target.value })} />
+              </Field>
+              <Field label="Idioma">
+                <input className="input" disabled={!canEdit} value={draft.language} onChange={(event) => updateDraft({ language: event.target.value })} />
+              </Field>
+            </div>
+            <Field label="Descripción">
+              <input className="input" disabled={!canEdit} value={draft.description} onChange={(event) => updateDraft({ description: event.target.value })} />
+            </Field>
+            <div className="template-token-box">
+              <span>Campos disponibles</span>
+              <div>{TEMPLATE_TOKENS.map((token) => <code key={token}>{`{{${token}}}`}</code>)}</div>
+            </div>
+            <Field label="Contenido base parametrizado">
+              <textarea className="input template-maintainer-textarea" disabled={!canEdit} value={draft.baseContent} onChange={(event) => updateDraft({ baseContent: event.target.value })} />
+            </Field>
+            {(() => {
+              const tokenIssues = templateTokenIssues(draft.baseContent);
+              if (tokenIssues.unknown.length === 0 && !tokenIssues.unmatchedBraces) return null;
+              return <div className="form-error">{tokenIssues.unknown.length > 0 ? `Tokens no reconocidos: ${tokenIssues.unknown.map((token) => `{{${token}}}`).join(", ")}.` : "Hay tokens sin cierre correcto."}</div>;
+            })()}
+          </div>
+        )}
       </div>
     </section>
   );
@@ -2148,7 +2902,7 @@ function ManualPage() {
     {
       title: "1. Selector de rol",
       body:
-        "Permite entrar como Handler, Gerente o CEO. El rol cambia los permisos y el alcance de datos: Handler ve sus casos; Gerente y CEO ven todo el portafolio."
+        "Permite entrar como Handler, Gerente, CEO o Inspector. El rol cambia los permisos y el alcance de datos: Handler ve sus casos; Gerente y CEO ven todo el portafolio; Inspector solo ve los casos que le fueron asignados."
     },
     {
       title: "2. Dashboard",
@@ -2188,27 +2942,37 @@ function ManualPage() {
     {
       title: "9. Alertas de prescripción",
       body:
-        "Calcula fecha de prescripción solo si existen fecha de descarga y jurisdicción explícita. Usa semáforo verde, ámbar o rojo y destaca casos sin movimiento por 14 días o más."
+        `Calcula fecha de prescripción solo si existen fecha de descarga y jurisdicción explícita. Usa semáforo verde, ámbar o rojo y muestra un aviso persistente cuando un caso lleva más de ${INACTIVITY_ALERT_DAYS} días sin movimiento.`
     },
     {
       title: "10. Cartas automatizadas",
       body:
-        "Genera una carta editable de notificación a la naviera con datos del caso y marca como [PENDIENTE COMPLETAR] cualquier campo faltante."
+        "Permite seleccionar Claim Notice, AoR, Harvest o LoA, completar sus campos parametrizados, editar el contenido, copiarlo y descargar un documento listo para imprimir."
     },
     {
-      title: "11. Benchmark por handler",
+      title: "11. Mantenedores",
       body:
-        "Vista gerencial que compara por handler los casos totales, documentación pendiente, alertas activas, casos sin movimiento, cobertura documental promedio y cálculos completos."
+        "Gerente puede activar o desactivar métodos de cálculo, ajustar sus nombres y descripciones, y editar el contenido base de los cuatro templates contractuales. La fórmula matemática queda protegida y toda generación sigue requiriendo revisión humana."
     },
     {
-      title: "12. Informe de revisión y traspaso",
+      title: "12. Benchmark por handler",
       body:
-        "Desde la pestaña Informe, el handler selecciona FIS para recupero extrajudicial o Logistic para recupero judicial y genera un resumen con documentación disponible y pendiente, causa propuesta, mérito preliminar y cálculo seleccionado. El informe queda en el historial, se puede descargar y debe revisarse antes de confirmar el traspaso. Si aún existen pendientes, el sistema los muestra como observaciones explícitas."
+        "Vista gerencial que compara por handler los casos totales, documentación pendiente, alertas activas, casos sin movimiento, cobertura documental promedio y cálculos completos. El dashboard también agrupa naves y viajes con dos o más casos y permite abrir el conjunto relacionado."
     },
     {
-      title: "13. Memoria histórica",
+      title: "13. Informe de revisión y traspaso",
+      body:
+        "Desde la pestaña Informe, el handler selecciona FIS para recupero extrajudicial o Lawgistic para recupero judicial y genera un resumen con documentación disponible y pendiente, causa propuesta, mérito preliminar y cálculo seleccionado. El informe queda en el historial, se puede descargar y debe revisarse antes de confirmar el traspaso. Si existen observaciones, el traspaso queda bloqueado hasta resolverlas."
+    },
+    {
+      title: "14. Memoria histórica",
       body:
         "La memoria se precarga automáticamente con el historial incluido en el demo. También permite importar otro Excel si se necesita ampliar la historia. Conserva los registros reconocibles, su hoja, fila, campos identificados y referencias repetidas. La memoria se puede buscar y filtrar, pero no modifica los casos activos ni permite editar directamente el registro histórico."
+    },
+    {
+      title: "15. Operación de inspección",
+      body:
+        "El perfil Inspector solo visualiza los casos que Gerente le haya asignado. Dentro de la pestaña Inspección puede registrar fecha, indicar si participará la naviera, escribir observaciones y descargar la Carta JSI. Gerente administra la asignación desde la ficha del caso."
     }
   ];
   const roleGuides = [
@@ -2220,12 +2984,17 @@ function ManualPage() {
     {
       role: "Gerente",
       guide:
-        "Supervisar todos los casos, comparar desempeño por handler, filtrar alertas y revertir estados con motivo obligatorio."
+        "Supervisar todos los casos, comparar desempeño por handler, filtrar alertas, revertir estados con motivo obligatorio y administrar los mantenedores."
     },
     {
       role: "CEO",
       guide:
         "Revisar el portafolio completo, comparar indicadores por handler, riesgos de prescripción y estado ejecutivo sin editar documentos ni cálculos."
+    },
+    {
+      role: "Inspector",
+      guide:
+        "Buscar y revisar solo casos asignados, registrar antecedentes de inspección y descargar la Carta JSI. No puede crear casos, editar documentos ni modificar cálculos."
     }
   ];
   return (
@@ -2258,10 +3027,13 @@ function ManualPage() {
               <li>Revisar checklist y copiar solicitud de faltantes.</li>
               <li>Confirmar análisis de causa.</li>
               <li>Guardar cálculo con método seleccionado y justificación.</li>
-              <li>Generar el informe de revisión, seleccionar destino FIS o Logistic y revisar las observaciones.</li>
+              <li>Generar el informe de revisión, seleccionar destino FIS o Lawgistic y revisar las observaciones.</li>
               <li>Confirmar el traspaso y, si corresponde, generar la carta.</li>
-              <li>Cambiar a Gerente para revisar dashboard, benchmark, alertas y reversión.</li>
+              <li>Cambiar a Gerente para revisar dashboard, benchmark, avisos de inactividad y reversión.</li>
+              <li>Entrar a Mantenedores para revisar o actualizar métodos y templates base.</li>
               <li>Entrar a Memoria para importar y consultar el historial completo desde Excel.</li>
+              <li>Cambiar a Gerente para asignar un Inspector desde la ficha de un caso.</li>
+              <li>Cambiar a Inspector para buscar un caso asignado, registrar la inspección y descargar la Carta JSI.</li>
             </ol>
           </div>
           <div className="panel">
@@ -2283,6 +3055,7 @@ function ManualPage() {
             </div>
             <ul className="manual-list">
               <li>No se guardan archivos reales, solo metadata.</li>
+              <li>El aviso de inactividad se activa cuando pasan más de 15 días sin una actualización.</li>
               <li>No hay jurisdicción por defecto.</li>
               <li>No hay prescripción sin fecha de descarga y jurisdicción.</li>
               <li>No hay cálculo guardado sin justificación suficiente.</li>
@@ -2361,6 +3134,7 @@ export default function App() {
       <Route path="/casos/nuevo" element={<NewCasePage />} />
       <Route path="/casos/:id" element={<CaseDetailPage />} />
       <Route path="/benchmark" element={<BenchmarkPage />} />
+      <Route path="/mantenedores" element={<MaintainersPage />} />
       <Route path="/manual" element={<ManualPage />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>

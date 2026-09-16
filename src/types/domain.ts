@@ -1,4 +1,30 @@
-export type UserRole = "Handler" | "Gerente" | "CEO";
+export type UserRole = "Handler" | "Gerente" | "CEO" | "Inspector";
+
+export type CalculationMethodId = "1" | "2" | "3" | "firm";
+
+export type TemplateId = "claim-notice" | "aor" | "harvest" | "loa";
+
+export type CalculationMethodConfig = {
+  id: CalculationMethodId;
+  title: string;
+  description: string;
+  formula: string;
+  active: boolean;
+  updatedAt: string;
+};
+
+export type TemplateConfig = {
+  id: TemplateId;
+  title: string;
+  shortTitle: string;
+  description: string;
+  language: string;
+  fields: string[];
+  baseContent: string;
+  active: boolean;
+  version?: number;
+  updatedAt: string;
+};
 
 export type CaseStatus =
   | "Datos incompletos"
@@ -6,9 +32,13 @@ export type CaseStatus =
   | "Documentación pendiente"
   | "Cálculo completo"
   | "Traspasado a FIS"
-  | "Traspasado a Logistic";
+  | "Traspasado a Lawgistic";
 
 export type Jurisdiccion = "Hamburgo" | "LaHaya";
+
+export type DischargeDateType = "Real" | "ETA";
+
+export type CurrencyCode = "USD" | "CLP" | "EUR";
 
 export type DocumentType =
   | "Carta de notificación a la naviera"
@@ -32,15 +62,18 @@ export type DocumentType =
 
 export type EventType =
   | "cambio_estado"
+  | "caso_actualizado"
   | "documento_cargado"
+  | "documento_eliminado"
   | "calculo_generado"
   | "carta_generada"
   | "reversion_estado"
   | "analisis_confirmado"
   | "extraccion_revisada"
+  | "inspeccion_registrada"
   | "informe_generado";
 
-export type TransferDestination = "FIS" | "Logistic";
+export type TransferDestination = "FIS" | "Lawgistic";
 
 export type SessionUser = {
   role: UserRole;
@@ -60,6 +93,7 @@ export type Caso = {
   dateOfShipment?: string;
   placeOfDischarge?: string;
   dateOfDischarge?: string;
+  dateOfDischargeType?: DischargeDateType;
   surveyor?: string;
   claimAmount?: number;
   jurisdiccion?: Jurisdiccion;
@@ -75,6 +109,10 @@ export type Caso = {
   ultimaActualizacion: string;
   createdAt: string;
   analisisCausa?: DamageAnalysis;
+  inspectorAsignado?: string;
+  fechaInspeccion?: string;
+  inspeccionConjunta?: boolean;
+  resumenInspeccion?: string;
 };
 
 export type HistoricalCategory = "Preclaim" | "FIS" | "Presentar" | "Traspasado" | "Descartado" | "Histórico";
@@ -98,11 +136,33 @@ export type HistoricalCase = {
   surveyor?: string;
   commodity?: string;
   claimAmount?: number;
+  calculoHistorico?: HistoricalCalculationInsight;
   category: HistoricalCategory;
+  sourceFileName?: string;
   sourceSheet: string;
   sourceRow: number;
   sourceBatchId: string;
   importedAt: string;
+};
+
+export type HistoricalCalculationMethod =
+  | "SMV vs liquidación"
+  | "SMV vs venta destino"
+  | "Factura vs venta destino"
+  | "Venta firme / nota de crédito"
+  | "Monto histórico sin fórmula";
+
+export type HistoricalCalculationInsight = {
+  method: HistoricalCalculationMethod;
+  formula: string;
+  referenceValue?: number;
+  actualValue?: number;
+  exchangeRate?: number;
+  result?: number;
+  currency?: string;
+  sourceFields: string[];
+  confidence: "Completo" | "Parcial" | "Monto informado";
+  note?: string;
 };
 
 export type HistorySheetSummary = {
@@ -130,6 +190,7 @@ export type Documento = {
   pathMock: string;
   disponible: boolean;
   fechaCarga: string;
+  clasificacionConfianza?: "Alta" | "Media" | "Baja";
   relativePath?: string;
   textoExtraido?: string;
   datosExtraidos?: ExtractedCaseData;
@@ -159,7 +220,11 @@ export type ExtractedCaseData = {
 };
 
 export type ExtractedLossProposal = {
-  moneda: "USD" | "CLP";
+  moneda: CurrencyCode;
+  monedaOrigen?: CurrencyCode;
+  tipoCambio?: number;
+  tipoCambioFecha?: string;
+  tipoCambioFuente?: string;
   metodo1_liquidacionReal?: number;
   metodo1_liquidacionComparativa?: number;
   metodo2_valorReporteMercado?: number;
@@ -188,7 +253,7 @@ export type ReviewReport = {
   selectedCalculation?: {
     method: string;
     amount?: number;
-    currency?: "USD" | "CLP";
+    currency?: CurrencyCode;
     justification?: string;
   };
   checklist: Array<{
@@ -200,6 +265,7 @@ export type ReviewReport = {
 export type UploadDraft = {
   originalName: string;
   tipoDocumento: DocumentType;
+  clasificacionConfianza?: "Alta" | "Media" | "Baja";
   relativePath?: string;
   textoExtraido?: string;
   datosExtraidos?: ExtractedCaseData;
@@ -214,8 +280,11 @@ export type RubroAdicional = {
 
 export type CalculoPerdida = {
   casoId: string;
-  moneda: "USD" | "CLP";
+  moneda: CurrencyCode;
+  monedaOrigen?: CurrencyCode;
   tipoCambio?: number;
+  tipoCambioFecha?: string;
+  tipoCambioFuente?: string;
   metodo1_liquidacionReal?: number;
   metodo1_liquidacionComparativa?: number;
   metodo1_resultado?: number;
@@ -231,6 +300,7 @@ export type CalculoPerdida = {
   metodoSeleccionado?: "1" | "2" | "3";
   justificacionSeleccion?: string;
   montoFinalReclamo?: number;
+  fuentes?: string[];
   updatedAt: string;
 };
 
@@ -267,6 +337,7 @@ export type NewCaseInput = {
   dateOfShipment?: string;
   placeOfDischarge?: string;
   dateOfDischarge?: string;
+  dateOfDischargeType?: DischargeDateType;
   surveyor?: string;
   claimAmount?: number;
   jurisdiccion?: Jurisdiccion;
@@ -276,4 +347,5 @@ export type NewCaseInput = {
   causaPotencial?: string;
   fuentesCausa?: string[];
   propuestaPerdida?: ExtractedLossProposal;
+  inspectorAsignado?: string;
 };

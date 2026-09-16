@@ -61,6 +61,8 @@
           '<section class="file-preview-card"><h1>Intervent Preclaim</h1><p>La demo se ejecuta desde un servidor local para cargar correctamente sus módulos.</p><a href="http://127.0.0.1:4187/">Abrir demo funcional</a></section>';
       }
     </script>
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module">
+      if (window.location.protocol !== "file:") import("/src/main.tsx");
+    </script>
   </body>
 </html>

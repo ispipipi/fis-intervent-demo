@@ -1,8 +1,8 @@
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import pdfWorker from "pdfjs-dist/legacy/build/pdf.worker.mjs?url";
 import * as XLSX from "xlsx";
-import { classifyDocument } from "./business";
-import { DocumentType, ExtractedCaseData, ExtractedLossProposal, UploadDraft } from "../types/domain";
+import { classifyDocument, documentClassificationConfidence } from "./business";
+import { CurrencyCode, DocumentType, ExtractedCaseData, ExtractedLossProposal, UploadDraft } from "../types/domain";
 
 const MAX_TEXT_LENGTH = 18_000;
 const REFERENCE_PATTERN = /PRE-FIS-[A-Z0-9]+-\d{4}-\d{2}-\d{4}/gi;
@@ -36,6 +36,23 @@ const INLINE_VALUE_BOUNDARIES = [
   "CURRENCY",
   "ANALYSIS BASIS",
   "SELECTED BASIS",
+  "LIQUIDACIÓN COMPARATIVA",
+  "LIQUIDACION COMPARATIVA",
+  "EMBARQUE COMPARABLE",
+  "LIQUIDACIÓN REAL",
+  "LIQUIDACION REAL",
+  "LIQUIDACIÓN POR CONTENEDOR",
+  "LIQUIDACION POR CONTENEDOR",
+  "VALOR REPORTE MERCADO",
+  "REPORTE DE MERCADO",
+  "VENTA DESTINO",
+  "VENTA BRUTA DESTINO",
+  "FACTURA EXPORTACIÓN",
+  "FACTURA EXPORTACION",
+  "TIPO DE CAMBIO",
+  "FECHA TIPO DE CAMBIO",
+  "FUENTE TIPO DE CAMBIO",
+  "TC",
   "MONTO PRELIMINAR",
   "CAUSA REPORTADA",
   "DECLARED CLAIM EXPOSURE",
@@ -124,32 +141,49 @@ function extractAmountsAfterLabel(text: string, label: string) {
   const start = text.toLowerCase().indexOf(label.toLowerCase());
   if (start < 0) return [];
   const segment = text.slice(start + label.length, start + label.length + 180);
-  return [...segment.matchAll(/(?:USD|US\$|CLP)?\s*-?\d(?:[\d.,]*\d)?/gi)]
+  return [...segment.matchAll(/(?:USD|US\$|CLP|EUR|€)?\s*-?\d(?:[\d.,]*\d)?/gi)]
     .map((match) => extractAmount(match[0]))
     .filter((value): value is number => value !== undefined);
 }
 
+function extractAmountsAfterLabels(text: string, labels: string[]) {
+  for (const label of labels) {
+    const values = extractAmountsAfterLabel(text, label);
+    if (values.length > 0) return values;
+  }
+  return [];
+}
+
 function extractLossProposal(text: string, type: DocumentType, fileName: string): ExtractedLossProposal | undefined {
-  const currency = (text.match(/\b(USD|CLP)\b/i)?.[1].toUpperCase() || "USD") as "USD" | "CLP";
-  const method1 = extractAmountsAfterLabel(text, "Comparable shipment");
-  const method2 = extractAmountsAfterLabel(text, "Market report");
-  const method3 = extractAmountsAfterLabel(text, "Export invoice vs destination sale");
-  const invoiceValue = extractAmount(findLabelValue(text, ["Subtotal", "Invoice total"]));
+  const currency = (text.match(/\b(USD|CLP|EUR)\b/i)?.[1].toUpperCase() || "USD") as CurrencyCode;
+  const method1 = extractAmountsAfterLabels(text, ["Comparable shipment", "Embarque comparable", "Liquidación comparativa", "Liquidacion comparativa"]);
+  const method1Actual = extractAmountsAfterLabels(text, ["Liquidación real", "Liquidacion real", "Liquidación por contenedor", "Liquidacion por contenedor"]);
+  const method2 = extractAmountsAfterLabels(text, ["Market report", "Reporte de mercado", "Valor reporte mercado"]);
+  const method3 = extractAmountsAfterLabels(text, ["Export invoice vs destination sale", "Factura exportación", "Factura exportacion"]);
+  const destinationSale = extractAmountsAfterLabels(text, ["Venta bruta destino", "Venta destino", "Destination sale"]);
+  const invoiceValue = extractAmount(findLabelValue(text, ["Subtotal", "Invoice total", "Factura de exportación", "Factura de exportacion"]));
   const finalClaim = extractAmount(findLabelValue(text, ["Indicative final claim", "Indicative claim"]));
   const salvage = extractAmountsAfterLabel(text, "Additional salvage adjustment")[0];
+  const tipoCambio = extractAmount(findLabelValue(text, ["Tipo de cambio", "Tipo cambio", "Exchange rate", "TC"]));
+  const tipoCambioFecha = extractDate(findLabelValue(text, ["Fecha tipo de cambio", "Fecha tipo cambio", "Exchange rate date"]));
+  const tipoCambioFuente = findLabelValue(text, ["Fuente tipo de cambio", "Fuente tipo cambio", "Exchange rate source"]);
   const proposal: ExtractedLossProposal = {
     moneda: currency,
+    monedaOrigen: currency,
+    tipoCambio,
+    tipoCambioFecha,
+    tipoCambioFuente,
     metodo1_liquidacionComparativa: method1[0],
-    metodo1_liquidacionReal: method1[1],
+    metodo1_liquidacionReal: method1Actual[0] ?? method1[1],
     metodo2_valorReporteMercado: method2[0],
     metodo2_liquidacionReal: method2[1],
     metodo3_valorFactura: method3[0] ?? invoiceValue,
-    metodo3_ventaBrutaDestino: method3[1],
+    metodo3_ventaBrutaDestino: destinationSale[0] ?? method3[1],
     rubrosAdicionales: salvage !== undefined ? [{ concepto: "Salvataje", monto: -Math.abs(salvage) }] : [],
     montoFinalReclamo: finalClaim,
     fuentes: [fileName]
   };
-  const hasValues = Object.entries(proposal).some(([key, value]) => key !== "moneda" && key !== "rubrosAdicionales" && key !== "fuentes" && value !== undefined);
+  const hasValues = Object.entries(proposal).some(([key, value]) => key !== "moneda" && key !== "monedaOrigen" && key !== "rubrosAdicionales" && key !== "fuentes" && value !== undefined);
   const supportedType = type === "Liquidación por contenedor" || type === "Liquidaciones comparativas o informe de mercado" || type === "Factura de exportación";
   return hasValues && supportedType ? proposal : undefined;
 }
@@ -310,15 +344,17 @@ async function readContent(file: File) {
 
 export async function processDocumentFiles(files: File[]): Promise<UploadDraft[]> {
   return Promise.all(files.map(async (file) => {
-    const tipoDocumento = classifyDocument(file.name);
     const extension = file.name.split(".").pop()?.toLowerCase();
+    const fallbackType = classifyDocument(file.name);
     try {
       const content = await readContent(file);
       const textoExtraido = content.text;
+      const tipoDocumento = classifyDocument(file.name, textoExtraido);
       const datosExtraidos = extractCaseData(textoExtraido, file.name, tipoDocumento);
       return {
         originalName: file.name,
         tipoDocumento,
+        clasificacionConfianza: documentClassificationConfidence(file.name, textoExtraido, tipoDocumento),
         relativePath: (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name,
         textoExtraido: textoExtraido.slice(0, 4000),
         datosExtraidos,
@@ -328,9 +364,10 @@ export async function processDocumentFiles(files: File[]): Promise<UploadDraft[]
     } catch {
       return {
         originalName: file.name,
-        tipoDocumento,
+        tipoDocumento: fallbackType,
+        clasificacionConfianza: documentClassificationConfidence(file.name, "", fallbackType),
         relativePath: (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name,
-        datosExtraidos: extractCaseData("", file.name, tipoDocumento),
+        datosExtraidos: extractCaseData("", file.name, fallbackType),
         estadoExtraccion: "parcial"
       } satisfies UploadDraft;
     }
@@ -372,8 +409,12 @@ export function mergeExtractedData(drafts: UploadDraft[], fallbackReference: str
   const lossData = lossDrafts.map((draft) => draft.datosExtraidos?.propuestaPerdida).filter(Boolean) as ExtractedLossProposal[];
   const firstLoss = <K extends keyof ExtractedLossProposal>(key: K) => lossData.map((item) => item[key]).find((value) => value !== undefined) as ExtractedLossProposal[K] | undefined;
   const propuestaPerdida = lossData.length > 0
-    ? {
-        moneda: lossData[0].moneda,
+      ? {
+          moneda: lossData[0].moneda,
+          monedaOrigen: firstLoss("monedaOrigen") || lossData[0].moneda,
+          tipoCambio: firstLoss("tipoCambio"),
+          tipoCambioFecha: firstLoss("tipoCambioFecha"),
+          tipoCambioFuente: firstLoss("tipoCambioFuente"),
         metodo1_liquidacionReal: firstLoss("metodo1_liquidacionReal"),
         metodo1_liquidacionComparativa: firstLoss("metodo1_liquidacionComparativa"),
         metodo2_valorReporteMercado: firstLoss("metodo2_valorReporteMercado"),

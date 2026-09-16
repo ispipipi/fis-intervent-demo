@@ -1,5 +1,5 @@
 import * as XLSX from "xlsx";
-import { HistoricalCase, HistoricalCategory, HistoryImportBatch, HistorySheetSummary } from "../types/domain";
+import { HistoricalCalculationInsight, HistoricalCase, HistoricalCategory, HistoryImportBatch, HistorySheetSummary } from "../types/domain";
 
 type CellValue = string | number | boolean | Date | null | undefined;
 
@@ -26,6 +26,23 @@ function normalizedReference(value: string) {
     .replace(/\s+/g, "")
     .replace(/[\/]+/g, "-")
     .replace(/-+/g, "-");
+}
+
+/**
+ * Identifies one historical row without using the import batch timestamp.
+ * The same reference may legitimately appear in different rows or sheets.
+ */
+type HistoricalRecordIdentity = Pick<HistoricalCase, "reference" | "sourceSheet" | "sourceRow"> &
+  Partial<Pick<HistoricalCase, "sourceFileName" | "sourceBatchId">>;
+
+function sourceFileKey(record: HistoricalRecordIdentity) {
+  if (record.sourceFileName) return normalizedHeader(record.sourceFileName);
+  const legacyFileName = record.sourceBatchId?.replace(/-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d{3}Z$/, "");
+  return normalizedHeader(legacyFileName || "legacy");
+}
+
+export function historicalRecordKey(record: HistoricalRecordIdentity) {
+  return [sourceFileKey(record), normalizedHeader(record.sourceSheet), record.sourceRow, normalizedReference(record.reference)].join("::");
 }
 
 function findReference(row: CellValue[]) {
@@ -57,9 +74,16 @@ function readByHeader(row: CellValue[], headers: string[], aliases: string[]) {
   return index >= 0 ? text(row[index]) : "";
 }
 
+function readByExactHeader(row: CellValue[], headers: string[], aliases: string[]) {
+  const index = headers.findIndex((header) => aliases.includes(header));
+  return index >= 0 ? text(row[index]) : "";
+}
+
 function parseAmount(value: string) {
   if (!value) return undefined;
-  const raw = value.replace(/[^\d,.-]/g, "");
+  const token = value.match(/-?\d[\d.,]*/)?.[0];
+  if (!token) return undefined;
+  const raw = token;
   if (!raw) return undefined;
   const comma = raw.lastIndexOf(",");
   const dot = raw.lastIndexOf(".");
@@ -73,6 +97,110 @@ function parseAmount(value: string) {
   }
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function readNumericByHeader(row: CellValue[], headers: string[], aliases: string[]) {
+  const value = readByHeader(row, headers, aliases);
+  // A cell such as "1.924.920 ($17.434,29 USD)" contains more than one monetary representation.
+  // Keep it out of an automatic formula until the handler can confirm which value applies.
+  if ((value.match(/-?\d[\d.,]*/g) || []).length > 1) return undefined;
+  return parseAmount(value);
+}
+
+function readNumericByExactHeader(row: CellValue[], headers: string[], aliases: string[]) {
+  const value = readByExactHeader(row, headers, aliases);
+  if ((value.match(/-?\d[\d.,]*/g) || []).length > 1) return undefined;
+  return parseAmount(value);
+}
+
+function readCurrency(row: CellValue[], headers: string[]) {
+  const value = readByHeader(row, headers, ["currency", "moneda"]);
+  return value || undefined;
+}
+
+function calculationInsight(row: CellValue[], headers: string[], claimAmount?: number): HistoricalCalculationInsight | undefined {
+  const smv = readNumericByExactHeader(row, headers, ["smv total", "smv"]);
+  const smvPerKilo = readNumericByExactHeader(row, headers, ["smv per kilo"]);
+  const kilos = readNumericByExactHeader(row, headers, ["kilos", "kg"]);
+  const liquidation = readNumericByExactHeader(row, headers, ["liquidacion por contenedor", "liquidacion", "liquidation"]);
+  const sale = readNumericByExactHeader(row, headers, ["sale", "venta", "venta destino"]);
+  const invoice = readNumericByExactHeader(row, headers, ["export invoice", "factura de exportacion", "factura exportacion"]);
+  const exchangeRate = readNumericByExactHeader(row, headers, ["exchange rate", "tipo de cambio", "tc"]);
+  const currency = readCurrency(row, headers);
+  const rowText = row.map(text).join(" ").toLowerCase();
+  const calculatedSmv = smv ?? (smvPerKilo !== undefined && kilos !== undefined ? smvPerKilo * kilos : undefined);
+
+  if (calculatedSmv !== undefined && liquidation !== undefined) {
+    const rawResult = calculatedSmv - liquidation;
+    return {
+      method: "SMV vs liquidación",
+      formula: exchangeRate !== undefined ? "(SMV - liquidación) × tipo de cambio" : "SMV - liquidación",
+      referenceValue: calculatedSmv,
+      actualValue: liquidation,
+      exchangeRate,
+      result: exchangeRate !== undefined ? rawResult * exchangeRate : rawResult,
+      currency,
+      sourceFields: [smv !== undefined ? "SMV" : "SMV por kilo × kilos", "Liquidación", ...(exchangeRate !== undefined ? ["Tipo de cambio"] : [])],
+      confidence: exchangeRate !== undefined ? "Completo" : "Parcial",
+      note: exchangeRate === undefined ? "El histórico no registra tipo de cambio para esta fila." : undefined
+    };
+  }
+
+  if (calculatedSmv !== undefined && sale !== undefined) {
+    const rawResult = calculatedSmv - sale;
+    return {
+      method: "SMV vs venta destino",
+      formula: exchangeRate !== undefined ? "(SMV - venta destino) × tipo de cambio" : "SMV - venta destino",
+      referenceValue: calculatedSmv,
+      actualValue: sale,
+      exchangeRate,
+      result: exchangeRate !== undefined ? rawResult * exchangeRate : rawResult,
+      currency,
+      sourceFields: [smv !== undefined ? "SMV" : "SMV por kilo × kilos", "Venta destino", ...(exchangeRate !== undefined ? ["Tipo de cambio"] : [])],
+      confidence: exchangeRate !== undefined ? "Completo" : "Parcial",
+      note: exchangeRate === undefined ? "El histórico no registra tipo de cambio para esta fila." : undefined
+    };
+  }
+
+  if (invoice !== undefined && sale !== undefined) {
+    return {
+      method: "Factura vs venta destino",
+      formula: "Factura de exportación - venta destino",
+      referenceValue: invoice,
+      actualValue: sale,
+      result: invoice - sale,
+      currency,
+      sourceFields: ["Factura de exportación", "Venta destino"],
+      confidence: "Parcial",
+      note: "La fuente contiene ambos valores; la venta puede incluir una presentación monetaria compuesta y requiere revisión humana."
+    };
+  }
+
+  if (/venta firme|nota de credito|credit note|firm sale/.test(rowText)) {
+    return {
+      method: "Venta firme / nota de crédito",
+      formula: "Usar valor de nota de crédito",
+      result: claimAmount,
+      currency,
+      sourceFields: ["Venta firme / nota de crédito"],
+      confidence: claimAmount !== undefined ? "Parcial" : "Monto informado",
+      note: "La fila identifica una venta firme o nota de crédito, pero no conserva un campo separado para el valor de la nota."
+    };
+  }
+
+  if (claimAmount !== undefined) {
+    return {
+      method: "Monto histórico sin fórmula",
+      formula: "Monto informado en el histórico",
+      result: claimAmount,
+      currency,
+      sourceFields: ["Claim amount / monto"],
+      confidence: "Monto informado",
+      note: "No hay insumos suficientes en esta fila para reconstruir la fórmula."
+    };
+  }
+
+  return undefined;
 }
 
 function statusLabel(value: string) {
@@ -96,6 +224,7 @@ function rowIsEmpty(row: CellValue[]) {
 function makeRecord(
   row: CellValue[],
   headers: string[],
+  sourceFileName: string,
   sourceSheet: string,
   sourceRow: number,
   sourceBatchId: string,
@@ -111,8 +240,9 @@ function makeRecord(
     || (/falta|pendiente|solicit/i.test(statusColumn) ? statusColumn : "");
   const amountFromHeader = readByHeader(row, headers, ["claim amount", "loss amount", "monto", "amount"]);
   const claimAmount = parseAmount(amountFromHeader) ?? parseAmount(text(row[0]));
+  const identity = { reference, sourceFileName, sourceSheet, sourceRow, sourceBatchId };
   return {
-    id: `historico-${normalizedReference(reference)}-${sourceSheet}-${sourceRow}`.replace(/[^a-zA-Z0-9_-]+/g, "-"),
+    id: `historico-${historicalRecordKey(identity)}`.replace(/[^a-zA-Z0-9_-]+/g, "-"),
     reference,
     referenceKey: normalizedReference(reference),
     legacyStatus: statusLabel(legacyStatusValue || statusColumn),
@@ -130,7 +260,9 @@ function makeRecord(
     surveyor: readByHeader(row, headers, ["surveyor", "surveyorco", "inspector"]) || undefined,
     commodity: readByHeader(row, headers, ["commodity", "cargo", "carga"]) || undefined,
     claimAmount,
+    calculoHistorico: calculationInsight(row, headers, claimAmount),
     category: categoryFor(reference, sourceSheet, legacyStatusValue || statusColumn),
+    sourceFileName,
     sourceSheet,
     sourceRow,
     sourceBatchId,
@@ -154,7 +286,7 @@ export async function parseHistoryWorkbook(file: File): Promise<HistoryImportBat
     let skippedRows = 0;
     rows.slice(headerIndex + 1).forEach((row, offset) => {
       if (rowIsEmpty(row)) return;
-      const record = makeRecord(row, headers, sheetName, headerIndex + offset + 2, batchId, importedAt);
+      const record = makeRecord(row, headers, file.name, sheetName, headerIndex + offset + 2, batchId, importedAt);
       if (record) {
         records.push(record);
         importedRows += 1;

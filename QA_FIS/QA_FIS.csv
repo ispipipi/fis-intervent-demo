@@ -1,0 +1,37 @@
+ID,Fuente,Modulo,Requerimiento,Estado,Prioridad,HallazgoRelacionado
+C-001,Contrato/MD,Roles,"Handler Gerente CEO",Cumplido,P1,QA-001
+C-002,Contrato/MD,Casos,"Lista busqueda estados expediente",Cumplido,P1,
+C-003,Contrato/MD,Ingreso,"Alta manual y carpeta",Parcial,P1,QA-002
+C-004,MD,Ingreso,"Drag and drop",Parcial,P2,QA-017
+C-005,Contrato/MD,Ingesta,"Procesamiento automatico",Parcial,P1,QA-017
+C-006,Contrato/MD,Documentos,"Clasificacion y renombrado",Parcial,P1,QA-017
+C-007,Contrato/MD,Persistencia,"Expediente digital",Parcial,P1,QA-002
+C-008,Contrato/MD,Checklist,"Disponibles y faltantes",Cumplido,P1,
+C-009,Contrato/MD,Solicitudes,"Texto de faltantes",Parcial,P2,QA-016
+C-010,Contrato/MD,Extraccion,"Campos del caso",Parcial,P1,QA-017
+C-011,Contrato/MD,Analisis,"Resumen causa merito",Parcial,P1,
+C-012,Contrato/MD,Revision,"Revision humana",Cumplido,P1,
+C-013,Contrato/MD,Calculo,"Tres metodos y venta firme",Parcial,P1,QA-004
+C-014,Contrato,Memoria,"Insight de calculo historico",Parcial,P2,QA-006
+C-015,Contrato/MD,Estados,"Avance y traspaso",Parcial,P1,QA-005
+C-016,Contrato/MD,Prescripcion,"Jurisdiccion y semaforo",Parcial,P1,
+C-017,Contrato/Cliente,Benchmark,"Comparacion por handler",Cumplido,P2,
+C-018,Cliente,Memoria,"Historico precargado",Implementado distinto,P1,QA-006
+C-019,Cliente,Mantenedores,"Calculos y templates base",Parcial,P2,QA-008
+C-020,Cliente,Manual,"Manual de usuario",Cumplido,P2,
+C-021,Contrato,Traspaso,"FIS y recupero judicial",Parcial,P1,QA-012
+C-022,Contrato,Auditoria,"Bitacora de cambios",Parcial,P1,QA-015
+N-001,Cliente,Memoria,"Migracion masiva Excel",Parcial,P1,QA-006
+N-002,Cliente,Templates,"SUBRO destruccion",No cumplido,P2,QA-008
+N-003,Cliente,Calculo,"Calculo desde facturas",Parcial,P1,QA-017
+N-004,Cliente,Monedas,"EUR y FX por fecha",No cumplido,P1,QA-004
+N-005,Cliente,Reportes,"Solicitudes correos Excel",No cumplido,P2,QA-007
+N-006,Cliente,Categorias,"Loss pre FIS",No cumplido,P2,
+N-007,Cliente,Inspector,"Perfil restringido",No cumplido,P2,QA-009
+N-008,Cliente,Casos,"Referencia editable",No cumplido,P1,QA-003
+N-009,Cliente,Casos,"Fecha descarga ETA",Implementado distinto,P1,QA-003
+N-010,Cliente,Prescripcion,"Terrestre 6 meses aereo 2 anos",No cumplido,P1,
+N-011,Cliente,Marca,"Lawgistic",No cumplido,P2,QA-014
+N-012,Cliente,Alertas,"Aviso mas de 15 dias",Implementado distinto,P2,QA-010
+N-013,Cliente,Dashboard,"Naves masivas",No cumplido,P2,QA-011
+N-014,Cliente,Reportes,"Excel historial gestion",Parcial,P2,QA-007

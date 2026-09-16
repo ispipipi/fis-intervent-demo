@@ -5,6 +5,7 @@ import {
   Caso,
   DocumentType,
   Documento,
+  CurrencyCode,
   Jurisdiccion,
   NewCaseInput
 } from "../types/domain";
@@ -12,6 +13,10 @@ import {
 export const STORAGE_PREFIX = "fis-intervent-demo:";
 
 export const HANDLERS = ["Emely Lambraño", "Camila Rojas", "Mateo Silva"];
+
+export const INSPECTORS = ["Valentina Soto"];
+
+export const INACTIVITY_ALERT_DAYS = 15;
 
 export function suggestHandler(assured?: string) {
   const normalized = assured?.toLowerCase() || "";
@@ -92,19 +97,33 @@ export const STATUS_SEQUENCE: CaseStatus[] = [
   "Documentación pendiente",
   "Cálculo completo",
   "Traspasado a FIS",
-  "Traspasado a Logistic"
+  "Traspasado a Lawgistic"
 ];
 
-export function classifyDocument(fileName: string): DocumentType {
-  const normalized = normalizeDocumentText(fileName);
+function classifyNormalized(value: string, allowFuzzy: boolean) {
+  const normalized = normalizeDocumentText(value);
   const exactBl = /\b(b\/l|bl|bill of lading)\b/.test(normalized);
   const qcReport = /\b(qc|quality control)\b/.test(normalized) && /\b(origen|destino)\b/.test(normalized);
   if (exactBl) return "BL";
   if (qcReport) return "Informes de QC en origen y destino";
   const directMatch = DIRECT_DOCUMENT_ALIASES.find((entry) => normalized.includes(entry.alias));
   if (directMatch) return directMatch.type;
+  if (!allowFuzzy) return "Sin clasificar";
   const result = fuse.search(normalized)[0];
   return result && (result.score ?? 1) < 0.35 ? result.item.type : "Sin clasificar";
+}
+
+export function classifyDocument(fileName: string, content = ""): DocumentType {
+  const fromName = classifyNormalized(fileName, true);
+  if (fromName !== "Sin clasificar") return fromName;
+  return classifyNormalized(content, false);
+}
+
+export function documentClassificationConfidence(fileName: string, content: string, type: DocumentType): "Alta" | "Media" | "Baja" {
+  if (type === "Sin clasificar") return "Baja";
+  if (classifyNormalized(fileName, true) === type) return "Alta";
+  if (classifyNormalized(content, false) === type) return "Media";
+  return "Baja";
 }
 
 export function abbreviateDocumentType(type: DocumentType): string {
@@ -212,6 +231,7 @@ export function buildCasoFromInput(input: NewCaseInput, index: number, complete:
     dateOfShipment: input.dateOfShipment,
     placeOfDischarge: input.placeOfDischarge,
     dateOfDischarge: input.dateOfDischarge,
+    dateOfDischargeType: input.dateOfDischargeType || "Real",
     surveyor: input.surveyor,
     claimAmount: input.claimAmount,
     jurisdiccion: input.jurisdiccion,
@@ -222,6 +242,7 @@ export function buildCasoFromInput(input: NewCaseInput, index: number, complete:
     causaPotencial: input.causaPotencial,
     fuentesCausa: input.fuentesCausa,
     propuestaPerdida: input.propuestaPerdida,
+    inspectorAsignado: input.inspectorAsignado,
     estado: complete && hasRequiredMinimum(input) ? "Preclaim" : "Datos incompletos",
     ultimaActualizacion: now,
     createdAt: now
@@ -242,20 +263,28 @@ export function documentCompleteness(documentos: Documento[]) {
 }
 
 export function calculateLoss(input: CalculoPerdida): CalculoPerdida {
+  const sourceCurrency = input.monedaOrigen || input.moneda;
+  const requiresConversion = sourceCurrency !== input.moneda;
+  const conversionRate = requiresConversion ? input.tipoCambio : 1;
+  const convert = (value?: number) => {
+    if (value === undefined || !Number.isFinite(value)) return undefined;
+    if (!requiresConversion) return value;
+    if (conversionRate === undefined || !Number.isFinite(conversionRate) || conversionRate <= 0) return undefined;
+    return value * conversionRate;
+  };
+  const converted = (reference?: number, actual?: number) => {
+    const convertedReference = convert(reference);
+    const convertedActual = convert(actual);
+    return convertedReference !== undefined && convertedActual !== undefined ? convertedReference - convertedActual : undefined;
+  };
   const metodo1 =
-    input.metodo1_liquidacionComparativa !== undefined && input.metodo1_liquidacionReal !== undefined
-      ? input.metodo1_liquidacionComparativa - input.metodo1_liquidacionReal
-      : undefined;
+    converted(input.metodo1_liquidacionComparativa, input.metodo1_liquidacionReal);
   const metodo2 =
-    input.metodo2_valorReporteMercado !== undefined && input.metodo2_liquidacionReal !== undefined
-      ? input.metodo2_valorReporteMercado - input.metodo2_liquidacionReal
-      : undefined;
+    converted(input.metodo2_valorReporteMercado, input.metodo2_liquidacionReal);
   const metodo3 =
-    input.metodo3_valorFactura !== undefined && input.metodo3_ventaBrutaDestino !== undefined
-      ? input.metodo3_valorFactura - input.metodo3_ventaBrutaDestino
-      : undefined;
+    converted(input.metodo3_valorFactura, input.metodo3_ventaBrutaDestino);
   const selectedResult = input.ventaAFirme
-    ? input.notaCreditoValor
+    ? convert(input.notaCreditoValor)
     : input.metodoSeleccionado === "1"
       ? metodo1
       : input.metodoSeleccionado === "2"
@@ -263,7 +292,7 @@ export function calculateLoss(input: CalculoPerdida): CalculoPerdida {
         : input.metodoSeleccionado === "3"
           ? metodo3
           : undefined;
-  const rubrosTotal = input.rubrosAdicionales.reduce((sum, rubro) => sum + rubro.monto, 0);
+  const rubrosTotal = input.rubrosAdicionales.reduce((sum, rubro) => sum + (convert(rubro.monto) || 0), 0);
   return {
     ...input,
     metodo1_resultado: metodo1,
@@ -274,7 +303,7 @@ export function calculateLoss(input: CalculoPerdida): CalculoPerdida {
   };
 }
 
-export function currency(value?: number, moneda: "USD" | "CLP" = "USD"): string {
+export function currency(value?: number, moneda: CurrencyCode = "USD"): string {
   if (value === undefined || Number.isNaN(value)) return "Sin datos";
   return new Intl.NumberFormat("es-CL", {
     style: "currency",
@@ -284,7 +313,7 @@ export function currency(value?: number, moneda: "USD" | "CLP" = "USD"): string 
 }
 
 export function canEditCalculation(caso: Caso): boolean {
-  return caso.estado !== "Traspasado a FIS" && caso.estado !== "Traspasado a Logistic";
+  return caso.estado !== "Traspasado a FIS" && caso.estado !== "Traspasado a Lawgistic";
 }
 
 export function nextStatusFromCase(caso: Caso, docs: Documento[], calculo?: CalculoPerdida): CaseStatus {

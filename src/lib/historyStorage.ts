@@ -1,4 +1,5 @@
 import { HistoricalCase, HistoryImportBatch, HistorySheetSummary } from "../types/domain";
+import { historicalRecordKey } from "./historyImport";
 
 const DB_NAME = "fis-intervent-demo-history";
 const DB_VERSION = 1;
@@ -18,6 +19,16 @@ export type StoredHistory = {
   records: HistoricalCase[];
   latest?: Omit<HistoryImportBatch, "records"> & { records: number };
 };
+
+function uniqueHistoricalRecords(records: HistoricalCase[]) {
+  const keys = new Set<string>();
+  return records.filter((record) => {
+    const key = historicalRecordKey(record);
+    if (keys.has(key)) return false;
+    keys.add(key);
+    return true;
+  });
+}
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -67,7 +78,7 @@ export async function loadHistoryStore(): Promise<StoredHistory> {
     transaction.oncomplete = () => {
       const batches = (batchesRequest.result as StoredBatch[]).sort((left, right) => left.importedAt.localeCompare(right.importedAt));
       const latest = batches.length > 0 ? batches[batches.length - 1] : undefined;
-      const records = recordsRequest.result as HistoricalCase[];
+      const records = uniqueHistoricalRecords(recordsRequest.result as HistoricalCase[]);
       resolve({
         records,
         latest: latest

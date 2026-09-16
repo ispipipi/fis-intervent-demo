@@ -14,7 +14,12 @@ import {
   TransferDestination,
   UploadDraft,
   HistoricalCase,
-  HistoryImportBatch
+  HistoryImportBatch,
+  CalculationMethodConfig,
+  TemplateConfig,
+  CalculationMethodId,
+  TemplateId,
+  DischargeDateType
 } from "../types/domain";
 import {
   buildCasoFromInput,
@@ -22,11 +27,15 @@ import {
   calculatePrescription,
   classifyDocument,
   renamedFile,
-  STORAGE_PREFIX
+  STORAGE_PREFIX,
+  INSPECTORS
 } from "../lib/business";
 import { buildReviewReport } from "../lib/review";
 import { loadHistoryStore, saveHistoryBatch } from "../lib/historyStorage";
 import { loadBundledHistory } from "../lib/historySeed";
+import { historicalRecordKey } from "../lib/historyImport";
+import { defaultTemplateConfigs } from "../lib/templates";
+import { DEFAULT_CALCULATION_METHODS } from "../lib/maintainers";
 
 type DemoState = {
   usuario: SessionUser;
@@ -35,11 +44,17 @@ type DemoState = {
   calculosPerdida: CalculoPerdida[];
   bitacora: BitacoraEvento[];
   historico: HistoricalCase[];
+  calculationMethods: CalculationMethodConfig[];
+  templateConfigs: TemplateConfig[];
   ultimaImportacionHistorico?: Omit<HistoryImportBatch, "records"> & { records: number };
   historicoCargando: boolean;
   setUsuario: (usuario: SessionUser) => void;
   createCase: (input: NewCaseInput, complete: boolean) => Caso;
   updateCase: (casoId: string, patch: Partial<Caso>) => void;
+  updateCaseDetails: (
+    casoId: string,
+    patch: Partial<Pick<Caso, "id" | "dateOfDischarge" | "dateOfDischargeType" | "jurisdiccion">>
+  ) => { ok: boolean; error?: string };
   prepareUpload: (files: FileList | File[]) => UploadDraft[];
   confirmUpload: (casoId: string, drafts: UploadDraft[]) => void;
   removeDocument: (documentId: string) => void;
@@ -49,6 +64,15 @@ type DemoState = {
   transitionCase: (casoId: string, nextStatus: CaseStatus, detail: string) => void;
   revertCase: (casoId: string, previousStatus: CaseStatus, reason: string) => { ok: boolean; error?: string };
   registerLetter: (casoId: string, detail: string) => void;
+  assignInspector: (casoId: string, inspector?: string) => { ok: boolean; error?: string };
+  saveInspection: (
+    casoId: string,
+    patch: Partial<Pick<Caso, "fechaInspeccion" | "inspeccionConjunta" | "resumenInspeccion">>
+  ) => { ok: boolean; error?: string };
+  updateCalculationMethod: (id: CalculationMethodId, patch: Partial<Omit<CalculationMethodConfig, "id" | "updatedAt">>) => void;
+  resetCalculationMethods: () => void;
+  updateTemplateConfig: (id: TemplateId, patch: Partial<Omit<TemplateConfig, "id" | "updatedAt">>) => void;
+  resetTemplateConfigs: () => void;
   importHistoricalCases: (batch: HistoryImportBatch, sourceFile: Blob) => Promise<number>;
   hydrateHistoricalCases: () => Promise<void>;
   resetDemo: () => void;
@@ -69,6 +93,10 @@ function event(casoId: string, tipoEvento: BitacoraEvento["tipoEvento"], detalle
   };
 }
 
+function isTransferredCase(caso?: Caso) {
+  return caso?.estado === "Traspasado a FIS" || caso?.estado === "Traspasado a Lawgistic";
+}
+
 const seedCases: Caso[] = [
   {
     id: "PRE-FIS-WAN-2025-03-4029",
@@ -81,6 +109,7 @@ const seedCases: Caso[] = [
     placeOfDischarge: "Busan",
     dateOfDischarge: dateOffset(-350),
     surveyor: "Hyopsung Surveyors",
+    inspectorAsignado: "Valentina Soto",
     claimAmount: 68928,
     jurisdiccion: "LaHaya",
     fechaPrescripcion: calculatePrescription(dateOffset(-350), "LaHaya"),
@@ -110,6 +139,7 @@ const seedCases: Caso[] = [
     placeOfDischarge: "Valparaíso",
     dateOfDischarge: dateOffset(-650),
     surveyor: "Global Marine Survey",
+    inspectorAsignado: "Valentina Soto",
     claimAmount: 41100,
     jurisdiccion: "Hamburgo",
     fechaPrescripcion: calculatePrescription(dateOffset(-650), "Hamburgo"),
@@ -207,8 +237,38 @@ function initialState() {
     calculosPerdida: seedCalculations,
     bitacora: seedEvents,
     historico: [],
+    calculationMethods: DEFAULT_CALCULATION_METHODS,
+    templateConfigs: defaultTemplateConfigs(),
     ultimaImportacionHistorico: undefined,
     historicoCargando: false
+  };
+}
+
+const DEMO_INSPECTOR_CASE_IDS = new Set([
+  "PRE-FIS-WAN-2025-03-4029",
+  "PRE-FIS-HLC-2025-02-4031"
+]);
+
+function addDefaultInspectorAssignments(casos: Caso[]) {
+  return casos.map((caso) =>
+    DEMO_INSPECTOR_CASE_IDS.has(caso.id) ? { ...caso, inspectorAsignado: INSPECTORS[0] } : caso
+  );
+}
+
+function migrateLegacyTransferLabels(persistedState: unknown): Partial<DemoState> {
+  const persisted = (persistedState || {}) as Partial<DemoState>;
+  return {
+    ...persisted,
+    casos: persisted.casos?.map((caso) => ({
+      ...caso,
+      estado: ((caso.estado as string) === "Traspasado a Logistic" ? "Traspasado a Lawgistic" : caso.estado) as CaseStatus,
+      informeRevision: caso.informeRevision
+        ? {
+            ...caso.informeRevision,
+            destination: ((caso.informeRevision.destination as string) === "Logistic" ? "Lawgistic" : caso.informeRevision.destination) as TransferDestination
+          }
+        : undefined
+    }))
   };
 }
 
@@ -216,7 +276,14 @@ export const useDemoStore = create<DemoState>()(
   persist(
     (set, get) => ({
       ...initialState(),
-      setUsuario: (usuario) => set({ usuario }),
+      setUsuario: (usuario) =>
+        set((state) => ({
+          usuario,
+          casos:
+            usuario.role === "Inspector" && !state.casos.some((caso) => caso.inspectorAsignado)
+              ? addDefaultInspectorAssignments(state.casos)
+              : state.casos
+        })),
       createCase: (input, complete) => {
         const caso = buildCasoFromInput(input, get().casos.length, complete);
         const detail = complete ? "Caso creado desde Guardar y continuar." : "Borrador creado desde Nuevo caso.";
@@ -237,6 +304,8 @@ export const useDemoStore = create<DemoState>()(
         return caso;
       },
       updateCase: (casoId, patch) => {
+        const currentCase = get().casos.find((caso) => caso.id === casoId);
+        if (!currentCase || isTransferredCase(currentCase)) return;
         const nowIso = new Date().toISOString();
         set((state) => ({
           casos: state.casos.map((caso) =>
@@ -262,6 +331,75 @@ export const useDemoStore = create<DemoState>()(
           ]
         }));
       },
+      updateCaseDetails: (casoId, patch) => {
+        const state = get();
+        const current = state.casos.find((caso) => caso.id === casoId);
+        if (!current) return { ok: false, error: "No se encontró el caso para actualizar." };
+        if (isTransferredCase(current)) return { ok: false, error: "El caso está traspasado y se encuentra en modo solo lectura." };
+
+        const nextId = patch.id?.trim() || current.id;
+        const normalizedNextId = nextId.toLocaleLowerCase();
+        const duplicate = state.casos.some(
+          (caso) => caso.id !== casoId && caso.id.trim().toLocaleLowerCase() === normalizedNextId
+        );
+        if (duplicate) return { ok: false, error: "La referencia ya existe en otro caso." };
+
+        const nextDate = patch.dateOfDischarge === undefined ? current.dateOfDischarge : patch.dateOfDischarge;
+        const nextDateType: DischargeDateType | undefined =
+          patch.dateOfDischargeType === undefined ? current.dateOfDischargeType : patch.dateOfDischargeType;
+        const nextJurisdiccion = patch.jurisdiccion === undefined ? current.jurisdiccion : patch.jurisdiccion;
+        const nowIso = new Date().toISOString();
+        const changedFields: string[] = [];
+        if (nextId !== current.id) changedFields.push(`referencia ${current.id} → ${nextId}`);
+        if (nextDate !== current.dateOfDischarge) changedFields.push(`fecha ${current.dateOfDischarge || "sin fecha"} → ${nextDate || "sin fecha"}`);
+        if (nextDateType !== current.dateOfDischargeType) changedFields.push(`tipo de fecha ${current.dateOfDischargeType || "Real"} → ${nextDateType || "Real"}`);
+        if (nextJurisdiccion !== current.jurisdiccion) changedFields.push(`jurisdicción ${current.jurisdiccion || "sin definir"} → ${nextJurisdiccion || "sin definir"}`);
+
+        set((state) => ({
+          casos: state.casos.map((caso) =>
+            caso.id === casoId
+              ? {
+                  ...caso,
+                  id: nextId,
+                  dateOfDischarge: nextDate,
+                  dateOfDischargeType: nextDateType,
+                  jurisdiccion: nextJurisdiccion,
+                  fechaPrescripcion: calculatePrescription(nextDate, nextJurisdiccion),
+                  informeRevision: caso.informeRevision
+                    ? { ...caso.informeRevision, caseId: nextId }
+                    : undefined,
+                  ultimaActualizacion: nowIso
+                }
+              : caso
+          ),
+          documentos: state.documentos.map((documento) => {
+            if (documento.casoId !== casoId) return documento;
+            if (nextId === casoId) return { ...documento, casoId: nextId };
+            const nombreArchivo = renamedFile(nextId, documento.tipoDocumento, documento.originalName || documento.nombreArchivo);
+            return {
+              ...documento,
+              casoId: nextId,
+              nombreArchivo,
+              pathMock: `mock://docs/${nextId}/${nombreArchivo}`
+            };
+          }),
+          calculosPerdida: state.calculosPerdida.map((calculo) =>
+            calculo.casoId === casoId ? { ...calculo, casoId: nextId } : calculo
+          ),
+          bitacora: [
+            {
+              id: crypto.randomUUID(),
+              casoId: nextId,
+              timestamp: nowIso,
+              tipoEvento: "caso_actualizado",
+              detalle: `Datos clave actualizados: ${changedFields.join("; ") || "sin cambios"}. Prescripción recalculada.`,
+              usuario: state.usuario.nombre
+            },
+            ...state.bitacora.map((evento) => (evento.casoId === casoId ? { ...evento, casoId: nextId } : evento))
+          ]
+        }));
+        return { ok: true };
+      },
       prepareUpload: (files) =>
         Array.from(files).map((file) => ({
           originalName: file.name,
@@ -270,7 +408,7 @@ export const useDemoStore = create<DemoState>()(
       confirmUpload: (casoId, drafts) => {
         const state = get();
         const caso = state.casos.find((item) => item.id === casoId);
-        if (!caso) return;
+        if (!caso || isTransferredCase(caso)) return;
         const nowIso = new Date().toISOString();
         const currentDocs = state.documentos.filter((item) => item.casoId === casoId);
         const draftKeys = new Set<string>();
@@ -300,6 +438,7 @@ export const useDemoStore = create<DemoState>()(
               pathMock: `mock://docs/${casoId}/${nombreArchivo}`,
               disponible: true,
               fechaCarga: nowIso,
+              clasificacionConfianza: draft.clasificacionConfianza,
               relativePath: draft.relativePath,
               textoExtraido: draft.textoExtraido,
               datosExtraidos: draft.datosExtraidos,
@@ -323,11 +462,30 @@ export const useDemoStore = create<DemoState>()(
         }));
       },
       removeDocument: (documentId) => {
+        const state = get();
+        const document = state.documentos.find((doc) => doc.id === documentId);
+        const caso = document ? state.casos.find((item) => item.id === document.casoId) : undefined;
+        if (!document || isTransferredCase(caso)) return;
+        const nowIso = new Date().toISOString();
         set((state) => ({
-          documentos: state.documentos.filter((doc) => doc.id !== documentId)
+          casos: state.casos.map((item) => item.id === document.casoId ? { ...item, ultimaActualizacion: nowIso } : item),
+          documentos: state.documentos.filter((doc) => doc.id !== documentId),
+          bitacora: [
+            {
+              id: crypto.randomUUID(),
+              casoId: document.casoId,
+              timestamp: nowIso,
+              tipoEvento: "documento_eliminado",
+              detalle: `Documento eliminado: ${document.nombreArchivo} (${document.tipoDocumento}).`,
+              usuario: state.usuario.nombre
+            },
+            ...state.bitacora
+          ]
         }));
       },
       saveAnalysis: (casoId, analysis) => {
+        const currentCase = get().casos.find((caso) => caso.id === casoId);
+        if (!currentCase || isTransferredCase(currentCase)) return;
         const nowIso = new Date().toISOString();
         set((state) => ({
           casos: state.casos.map((caso) => (caso.id === casoId ? { ...caso, analisisCausa: analysis } : caso)),
@@ -345,8 +503,26 @@ export const useDemoStore = create<DemoState>()(
         }));
       },
       saveCalculation: (calculation) => {
+        const currentCase = get().casos.find((caso) => caso.id === calculation.casoId);
+        if (!currentCase) return { ok: false, error: "No se encontró el caso asociado al cálculo." };
+        if (isTransferredCase(currentCase)) return { ok: false, error: "El caso está traspasado y el cálculo se encuentra bloqueado." };
+        const selectedMethod = calculation.ventaAFirme
+          ? get().calculationMethods.find((method) => method.id === "firm")
+          : calculation.metodoSeleccionado
+            ? get().calculationMethods.find((method) => method.id === calculation.metodoSeleccionado)
+            : undefined;
+        if (selectedMethod && !selectedMethod.active) {
+          return { ok: false, error: "El método seleccionado está inactivo en el mantenedor de cálculos." };
+        }
         if (calculation.ventaAFirme && (calculation.notaCreditoValor === undefined || calculation.notaCreditoValor <= 0)) {
           return { ok: false, error: "En venta a firme debes ingresar el valor de la nota de crédito." };
+        }
+        const sourceCurrency = calculation.monedaOrigen || calculation.moneda;
+        if (sourceCurrency !== calculation.moneda && (calculation.tipoCambio === undefined || !Number.isFinite(calculation.tipoCambio) || calculation.tipoCambio <= 0)) {
+          return { ok: false, error: "Ingresa un tipo de cambio positivo para convertir la moneda de origen." };
+        }
+        if (sourceCurrency !== calculation.moneda && !calculation.tipoCambioFecha) {
+          return { ok: false, error: "Indica la fecha del tipo de cambio aplicado." };
         }
         if (calculation.metodoSeleccionado && (calculation.justificacionSeleccion?.trim().length ?? 0) < 10) {
           return { ok: false, error: "La justificación del método seleccionado debe tener al menos 10 caracteres." };
@@ -355,6 +531,9 @@ export const useDemoStore = create<DemoState>()(
           return { ok: false, error: "Selecciona un método o marca venta a firme antes de guardar." };
         }
         const computed = calculateLoss(calculation);
+        if (!calculation.ventaAFirme && computed.montoFinalReclamo === undefined) {
+          return { ok: false, error: "El método seleccionado no tiene todos sus valores de respaldo." };
+        }
         const nowIso = new Date().toISOString();
         set((state) => ({
           calculosPerdida: [computed, ...state.calculosPerdida.filter((item) => item.casoId !== calculation.casoId)],
@@ -377,7 +556,7 @@ export const useDemoStore = create<DemoState>()(
       generateReviewReport: (casoId, destination) => {
         const state = get();
         const caso = state.casos.find((item) => item.id === casoId);
-        if (!caso) return undefined;
+        if (!caso || isTransferredCase(caso)) return undefined;
         const calculo = state.calculosPerdida.find((item) => item.casoId === casoId);
         const report = buildReviewReport(
           caso,
@@ -406,6 +585,9 @@ export const useDemoStore = create<DemoState>()(
         return report;
       },
       transitionCase: (casoId, nextStatus, detail) => {
+        const currentCase = get().casos.find((caso) => caso.id === casoId);
+        if (!currentCase || isTransferredCase(currentCase)) return;
+        if (nextStatus.startsWith("Traspasado") && !currentCase.informeRevision?.ready) return;
         const nowIso = new Date().toISOString();
         set((state) => ({
           casos: state.casos.map((caso) =>
@@ -448,6 +630,8 @@ export const useDemoStore = create<DemoState>()(
         return { ok: true };
       },
       registerLetter: (casoId, detail) => {
+        const currentCase = get().casos.find((caso) => caso.id === casoId);
+        if (!currentCase || isTransferredCase(currentCase)) return;
         const nowIso = new Date().toISOString();
         set((state) => ({
           bitacora: [
@@ -463,12 +647,105 @@ export const useDemoStore = create<DemoState>()(
           ]
         }));
       },
+      assignInspector: (casoId, inspector) => {
+        const state = get();
+        const current = state.casos.find((caso) => caso.id === casoId);
+        if (!current) return { ok: false, error: "No se encontró el caso para asignar." };
+        if (state.usuario.role !== "Gerente") return { ok: false, error: "Solo Gerente puede asignar inspectores." };
+        if (isTransferredCase(current)) return { ok: false, error: "El caso está traspasado y no admite cambios de asignación." };
+        const nextInspector = inspector?.trim() || undefined;
+        if (nextInspector && !INSPECTORS.includes(nextInspector)) return { ok: false, error: "Selecciona un inspector válido." };
+        const nowIso = new Date().toISOString();
+        set((currentState) => ({
+          casos: currentState.casos.map((caso) =>
+            caso.id === casoId ? { ...caso, inspectorAsignado: nextInspector, ultimaActualizacion: nowIso } : caso
+          ),
+          bitacora: [
+            {
+              id: crypto.randomUUID(),
+              casoId,
+              timestamp: nowIso,
+              tipoEvento: "caso_actualizado",
+              detalle: `Asignación de inspección ${nextInspector ? `entregada a ${nextInspector}` : "retirada"}.`,
+              usuario: currentState.usuario.nombre
+            },
+            ...currentState.bitacora
+          ]
+        }));
+        return { ok: true };
+      },
+      saveInspection: (casoId, patch) => {
+        const state = get();
+        const current = state.casos.find((caso) => caso.id === casoId);
+        if (!current) return { ok: false, error: "No se encontró el caso de inspección." };
+        if (state.usuario.role !== "Inspector") return { ok: false, error: "Solo el perfil Inspector puede registrar la inspección." };
+        if (current.inspectorAsignado !== state.usuario.nombre) return { ok: false, error: "Este caso no está asignado al inspector actual." };
+        if (isTransferredCase(current)) return { ok: false, error: "El caso está traspasado y la inspección se encuentra bloqueada." };
+        if (!patch.fechaInspeccion) return { ok: false, error: "Ingresa la fecha de inspección." };
+        if (patch.inspeccionConjunta === undefined) return { ok: false, error: "Indica si la inspección será conjunta con la naviera." };
+        const nowIso = new Date().toISOString();
+        set((currentState) => ({
+          casos: currentState.casos.map((caso) =>
+            caso.id === casoId
+              ? {
+                  ...caso,
+                  fechaInspeccion: patch.fechaInspeccion,
+                  inspeccionConjunta: patch.inspeccionConjunta,
+                  resumenInspeccion: patch.resumenInspeccion?.trim() || undefined,
+                  ultimaActualizacion: nowIso
+                }
+              : caso
+          ),
+          bitacora: [
+            {
+              id: crypto.randomUUID(),
+              casoId,
+              timestamp: nowIso,
+              tipoEvento: "inspeccion_registrada",
+              detalle: `Inspección registrada para ${patch.fechaInspeccion}. ${patch.inspeccionConjunta ? "Se realizará con la naviera" : "No se realizará con la naviera"}.`,
+              usuario: currentState.usuario.nombre
+            },
+            ...currentState.bitacora
+          ]
+        }));
+        return { ok: true };
+      },
+      updateCalculationMethod: (id, patch) => {
+        const nowIso = new Date().toISOString();
+        set((state) => ({
+          calculationMethods: state.calculationMethods.map((method) =>
+            method.id === id ? { ...method, ...patch, updatedAt: nowIso } : method
+          )
+        }));
+      },
+      resetCalculationMethods: () => set({ calculationMethods: DEFAULT_CALCULATION_METHODS.map((method) => ({ ...method })) }),
+      updateTemplateConfig: (id, patch) => {
+        const nowIso = new Date().toISOString();
+        set((state) => ({
+          templateConfigs: state.templateConfigs.map((template) =>
+            template.id === id ? { ...template, ...patch, version: (template.version || 1) + 1, updatedAt: nowIso } : template
+          )
+        }));
+      },
+      resetTemplateConfigs: () => set({ templateConfigs: defaultTemplateConfigs() }),
       importHistoricalCases: async (batch, sourceFile) => {
         const current = get().historico;
-        const knownIds = new Set(current.map((record) => record.id));
-        const newRecords = batch.records.filter((record) => !knownIds.has(record.id));
+        const currentKeys = new Set<string>();
+        const currentWithoutDuplicates = current.filter((record) => {
+          const key = historicalRecordKey(record);
+          if (currentKeys.has(key)) return false;
+          currentKeys.add(key);
+          return true;
+        });
+        const importedKeys = new Set<string>();
+        const newRecords = batch.records.filter((record) => {
+          const key = historicalRecordKey(record);
+          if (currentKeys.has(key) || importedKeys.has(key)) return false;
+          importedKeys.add(key);
+          return true;
+        });
         set((state) => ({
-          historico: [...state.historico, ...newRecords],
+          historico: [...currentWithoutDuplicates, ...newRecords],
           ultimaImportacionHistorico: {
             batchId: batch.batchId,
             fileName: batch.fileName,
@@ -512,13 +789,16 @@ export const useDemoStore = create<DemoState>()(
     }),
     {
       name: `${STORAGE_PREFIX}state`,
-      version: 1,
+      version: 2,
+      migrate: migrateLegacyTransferLabels,
       partialize: (state) => ({
         usuario: state.usuario,
         casos: state.casos,
         documentos: state.documentos,
         calculosPerdida: state.calculosPerdida,
-        bitacora: state.bitacora
+        bitacora: state.bitacora,
+        calculationMethods: state.calculationMethods,
+        templateConfigs: state.templateConfigs
       })
     }
   )
