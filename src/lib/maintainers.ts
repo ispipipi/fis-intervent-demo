@@ -4,24 +4,24 @@ export const DEFAULT_CALCULATION_METHODS: CalculationMethodConfig[] = [
   {
     id: "1",
     title: "Método 1 · Embarque comparable",
-    description: "Compara la liquidación del embarque con una liquidación comparable.",
-    formula: "Liquidación comparativa - liquidación real",
+    description: "Compara la liquidación bruta real del embarque con una liquidación bruta comparable.",
+    formula: "Liquidación bruta comparable - liquidación bruta real",
     active: true,
     updatedAt: new Date().toISOString()
   },
   {
     id: "2",
     title: "Método 2 · Reporte de mercado",
-    description: "Compara el valor respaldado por el reporte de mercado con la liquidación real.",
-    formula: "Valor reporte de mercado - liquidación real",
+    description: "Compara el valor bruto respaldado por el reporte de mercado con la liquidación bruta real.",
+    formula: "Valor bruto reporte de mercado - liquidación bruta real",
     active: true,
     updatedAt: new Date().toISOString()
   },
   {
     id: "3",
     title: "Método 3 · Factura vs. venta",
-    description: "Compara el valor de la factura de exportación con la venta bruta en destino.",
-    formula: "Valor factura de exportación - venta destino",
+    description: "Compara el valor de la factura de exportación con la venta neta consolidada en destino.",
+    formula: "Valor factura de exportación - venta neta destino",
     active: true,
     updatedAt: new Date().toISOString()
   },
@@ -34,4 +34,3 @@ export const DEFAULT_CALCULATION_METHODS: CalculationMethodConfig[] = [
     updatedAt: new Date().toISOString()
   }
 ];
-

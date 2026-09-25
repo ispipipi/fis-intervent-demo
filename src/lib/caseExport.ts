@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx";
 import { BitacoraEvento, CalculoPerdida, Caso, Documento, HistoricalCase } from "../types/domain";
-import { daysWithoutMovement, documentCompleteness, prescriptionStatus } from "./business";
+import { daysWithoutMovement, documentChecklist, isChecklistItemComplete, prescriptionStatus } from "./business";
 
 type ExportValue = string | number | undefined;
 type ExportRow = Record<string, ExportValue>;
@@ -55,8 +55,10 @@ function caseRows(
 ) {
   return casos.map<ExportRow>((caso) => {
     const docs = documentos.filter((documento) => documento.casoId === caso.id);
-    const completeness = documentCompleteness(docs);
     const calculo = calculosPerdida.find((item) => item.casoId === caso.id);
+    const checklist = documentChecklist(caso, docs, calculo);
+    const requiredChecklist = checklist.filter((item) => item.required);
+    const missingChecklist = requiredChecklist.filter((item) => !isChecklistItemComplete(item));
     const events = bitacora.filter((event) => event.casoId === caso.id);
     const endEvent = transferEvent(caso, events);
     const lossAmount = calculo?.montoFinalReclamo;
@@ -79,19 +81,23 @@ function caseRows(
       "Fecha de descarga / ETA": dateOnly(caso.dateOfDischarge),
       "Tipo de fecha": caso.dateOfDischargeType || "Real",
       "Jurisdicción": caso.jurisdiccion,
-      "Inspector / surveyor": caso.inspectorAsignado || caso.surveyor,
-      "Fecha de inspección": dateOnly(caso.fechaInspeccion),
-      "Inspección conjunta con naviera": caso.inspeccionConjunta === undefined ? undefined : caso.inspeccionConjunta ? "Sí" : "No",
-      "Resumen inspección": caso.resumenInspeccion,
+      "Surveyor / inspector informado": caso.surveyor,
       "Estado del caso": caso.estado,
-      "Estado documental": completeness.missing.length > 0 ? "Pendiente" : "Completo",
-      "Documentos disponibles": completeness.completed,
-      "Documentos faltantes": completeness.missing.length,
-      "Detalle documentos faltantes": completeness.missing.join("; "),
+      "Estado documental": missingChecklist.length > 0 ? "Pendiente" : "Completo",
+      "Documentos disponibles": requiredChecklist.filter((item) => isChecklistItemComplete(item)).length,
+      "Documentos faltantes": missingChecklist.length,
+      "Detalle documentos faltantes": missingChecklist.map((item) => item.type).join("; "),
       "Pérdida calculada": lossAmount,
       "Moneda pérdida": lossCurrency,
+      "Moneda origen cálculo": calculo?.monedaOrigen || calculo?.moneda,
+      "Moneda resultado cálculo": calculo?.moneda,
+      "Tipo de cambio": calculo?.tipoCambio,
+      "Fecha tipo de cambio": dateOnly(calculo?.tipoCambioFecha),
+      "Fuente tipo de cambio": calculo?.tipoCambioFuente,
       "Método de cálculo": calculo?.ventaAFirme ? "Venta a firme / nota de crédito" : calculo?.metodoSeleccionado ? `Método ${calculo.metodoSeleccionado}` : undefined,
       "Monto reclamado informado": caso.claimAmount,
+      "Fecha de prescripción calculada": dateOnly(caso.fechaPrescripcion),
+      "Base de prescripción": caso.dateOfDischargeType === "ETA" ? "ETA estimada" : caso.dateOfDischarge ? "Descarga real" : undefined,
       "Alerta prescripción": prescription.label,
       "Días sin movimiento": daysWithoutMovement(caso),
       "Fecha de recepción": dateOnly(caso.createdAt),

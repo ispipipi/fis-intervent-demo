@@ -1,0 +1,17 @@
+Hola RodriGO, ¿cómo estái? 
+
+Mira, te cuento que hemos estado todos estos días en conversaciones con nuestro cliente respecto al acceso de esta plataforma. Y nos levantaron varios puntos en realidad que les preocupa, y siendo súper honesta, ya en el fondo tenemos que tirar un poco la toalla con eso porque es nuestro principal cliente y entendemos también la posición de ellos, sobre todo con el tema de que manejan información muy delicada en su plataforma, etcétera.
+
+Entonces, como nosotros queremos seguir avanzando y no quedarnos parados con esto, lo que estábamos pensando es que mientras tanto avanzáramos con ustedes pensando ya desde la carpeta que se descargó con documentación de la plataforma, y de ahí en adelante en base a todo lo que hemos conversado.
+
+Porque igual en algún punto, algo que nosotros le solicitamos a este cliente como parte del desarrollo de esta nueva plataforma que yo te comenté que ellos están haciendo y que se supone que estaría lista en octubre, es que nosotros podamos apretar un botón y que se descargue de forma automática esta carpeta con toda la documentación.
+
+Entonces, nosotros por un lado acordamos con el cliente que vamos a seguir insistiendo sobre que eso realmente se realice; y por otro lado, la idea sería que, si el cliente logra realizar esto (que uno aprieta un botón y se descarga en una carpeta de forma automática toda la documentación), trabajar con la automatización que ustedes desarrollen. Que en el fondo procese esta carpeta con los documentos que hay, los individualice, los ponga con los nombres correspondientes al documento, te indique en el fondo qué es lo que hay disponible y qué es lo que faltaría, cuáles serían acorde a la documentación el tipo de caso, que te cuantifique la pérdida, todas esas cosas.
+
+¿Ya? Pero eso sería en el fondo pensar en ese tipo de desarrollo ahora en este momento, porque la verdad no vamos a lograr obtener en este minuto el pase ni nada similar, y yo creo que nunca.
+
+Pero ya eso para nosotros sería súper bueno que se gestionara porque, como te decía, vamos a seguir insistiendo para que esta plataforma nueva que está desarrollando nuestro cliente pueda simplemente con un clic generar esta carpeta de forma automática y así trabaje después con lo que hayamos desarrollado con ustedes, ¿ya?
+
+No sé si te parece eso, Rodri, para que podamos ir avanzando y no quedarnos pegados, porque en verdad nos interesa poder ir generando más automatizaciones y cambios, pero bueno, tenemos que partir por el demo que ustedes van a construir, verlo, y en base a eso ver si seguimos con ustedes o con el otro proveedor que nos hizo la cotización en un inicio.
+
+Entonces, ¿te parece que avancemos para ver si podemos ir ya concretando cosas? Me cuentas. Un abrazo, que estés muy bien y que tengas linda tarde.

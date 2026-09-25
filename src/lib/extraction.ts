@@ -5,7 +5,7 @@ import { classifyDocument, documentClassificationConfidence } from "./business";
 import { CurrencyCode, DocumentType, ExtractedCaseData, ExtractedLossProposal, UploadDraft } from "../types/domain";
 
 const MAX_TEXT_LENGTH = 18_000;
-const REFERENCE_PATTERN = /PRE-FIS-[A-Z0-9]+-\d{4}-\d{2}-\d{4}/gi;
+const REFERENCE_PATTERN = /PRE-FIS(?:\/[A-Z0-9]+)?-[A-Z0-9]{3}-\d{4}-\d{2}(?:\/\d{2})?-\d{4,}/gi;
 const CLAIM_PATTERN = /CS-\d{4}-\d{3,}/i;
 const INLINE_VALUE_BOUNDARIES = [
   "REFERENCE NO",
@@ -141,7 +141,7 @@ function extractAmountsAfterLabel(text: string, label: string) {
   const start = text.toLowerCase().indexOf(label.toLowerCase());
   if (start < 0) return [];
   const segment = text.slice(start + label.length, start + label.length + 180);
-  return [...segment.matchAll(/(?:USD|US\$|CLP|EUR|€)?\s*-?\d(?:[\d.,]*\d)?/gi)]
+  return [...segment.matchAll(/(?:USD|US\$|CLP|EUR|CNY|HKD|GBP|€)?\s*-?\d(?:[\d.,]*\d)?/gi)]
     .map((match) => extractAmount(match[0]))
     .filter((value): value is number => value !== undefined);
 }
@@ -155,12 +155,13 @@ function extractAmountsAfterLabels(text: string, labels: string[]) {
 }
 
 function extractLossProposal(text: string, type: DocumentType, fileName: string): ExtractedLossProposal | undefined {
-  const currency = (text.match(/\b(USD|CLP|EUR)\b/i)?.[1].toUpperCase() || "USD") as CurrencyCode;
-  const method1 = extractAmountsAfterLabels(text, ["Comparable shipment", "Embarque comparable", "Liquidación comparativa", "Liquidacion comparativa"]);
-  const method1Actual = extractAmountsAfterLabels(text, ["Liquidación real", "Liquidacion real", "Liquidación por contenedor", "Liquidacion por contenedor"]);
-  const method2 = extractAmountsAfterLabels(text, ["Market report", "Reporte de mercado", "Valor reporte mercado"]);
+  const currency = (text.match(/\b(USD|CLP|EUR|CNY|HKD|GBP)\b/i)?.[1].toUpperCase() || "USD") as CurrencyCode;
+  const method1 = extractAmountsAfterLabels(text, ["Gross comparable shipment", "Embarque comparable bruto", "Liquidación bruta comparativa", "Liquidacion bruta comparativa", "Comparable shipment", "Embarque comparable", "Liquidación comparativa", "Liquidacion comparativa"]);
+  const method1Actual = extractAmountsAfterLabels(text, ["Gross actual settlement", "Liquidación bruta real", "Liquidacion bruta real", "Liquidación real", "Liquidacion real", "Liquidación por contenedor", "Liquidacion por contenedor"]);
+  const method2 = extractAmountsAfterLabels(text, ["Gross market report", "Reporte de mercado bruto", "Valor bruto reporte mercado", "Market report", "Reporte de mercado", "Valor reporte mercado"]);
+  const method2Actual = extractAmountsAfterLabels(text, ["Gross actual settlement", "Liquidación bruta real", "Liquidacion bruta real", "Liquidación real", "Liquidacion real"]);
   const method3 = extractAmountsAfterLabels(text, ["Export invoice vs destination sale", "Factura exportación", "Factura exportacion"]);
-  const destinationSale = extractAmountsAfterLabels(text, ["Venta bruta destino", "Venta destino", "Destination sale"]);
+  const destinationSale = extractAmountsAfterLabels(text, ["Venta neta destino", "Venta destino neta", "Net destination sale", "Venta bruta destino", "Venta destino", "Destination sale"]);
   const invoiceValue = extractAmount(findLabelValue(text, ["Subtotal", "Invoice total", "Factura de exportación", "Factura de exportacion"]));
   const finalClaim = extractAmount(findLabelValue(text, ["Indicative final claim", "Indicative claim"]));
   const salvage = extractAmountsAfterLabel(text, "Additional salvage adjustment")[0];
@@ -176,9 +177,9 @@ function extractLossProposal(text: string, type: DocumentType, fileName: string)
     metodo1_liquidacionComparativa: method1[0],
     metodo1_liquidacionReal: method1Actual[0] ?? method1[1],
     metodo2_valorReporteMercado: method2[0],
-    metodo2_liquidacionReal: method2[1],
+    metodo2_liquidacionReal: method2Actual[0] ?? method2[1],
     metodo3_valorFactura: method3[0] ?? invoiceValue,
-    metodo3_ventaBrutaDestino: destinationSale[0] ?? method3[1],
+    metodo3_ventaNetaDestino: destinationSale[0] ?? method3[1],
     rubrosAdicionales: salvage !== undefined ? [{ concepto: "Salvataje", monto: -Math.abs(salvage) }] : [],
     montoFinalReclamo: finalClaim,
     fuentes: [fileName]
@@ -212,10 +213,40 @@ function detectCause(text: string, type: DocumentType) {
   return undefined;
 }
 
+const CONFLICT_FIELDS: Array<[keyof ExtractedCaseData, string]> = [
+  ["referencia", "Referencia"],
+  ["csClaimNo", "CS Claim No"],
+  ["assured", "Asegurado"],
+  ["consignee", "Consignatario"],
+  ["opponent", "Transportista / oponente"],
+  ["vessel", "Nave"],
+  ["voyage", "Viaje"],
+  ["cargo", "Carga"],
+  ["placeOfShipment", "Lugar de embarque"],
+  ["dateOfShipment", "Fecha de embarque"],
+  ["placeOfDischarge", "Lugar de descarga"],
+  ["dateOfDischarge", "Fecha de descarga"],
+  ["surveyor", "Inspector"],
+  ["claimAmount", "Monto reclamado"]
+];
+
+function detectExtractionConflicts(data: ExtractedCaseData[]): string[] {
+  return CONFLICT_FIELDS.flatMap(([field, label]) => {
+    const values = [...new Set(
+      data
+        .map((item) => item[field])
+        .filter((value) => value !== undefined && value !== "")
+        .map((value) => String(value).trim())
+    )];
+    return values.length > 1 ? [`${label}: ${values.join(" / ")}`] : [];
+  });
+}
+
 export function extractCaseData(text: string, fileName: string, type: DocumentType): ExtractedCaseData {
   const normalizedText = text.slice(0, MAX_TEXT_LENGTH);
   const references = [...new Set([...(fileName.match(REFERENCE_PATTERN) || []), ...(normalizedText.match(REFERENCE_PATTERN) || [])])];
   const assured = findLabelValue(normalizedText, ["Asegurado", "Shipper", "Principal"]);
+  const consignee = findLabelValue(normalizedText, ["Consignatario", "Consignee", "Consignee name"]);
   const opponent = findLabelValue(normalizedText, ["Contraparte", "Transportista", "Carrier", "Opponent"]);
   const vesselAndVoyage = extractVesselAndVoyage(findLabelValue(normalizedText, ["Nave / viaje", "Vessel / voyage"]));
   const discharge = extractPlaceAndDate(findLabelValue(normalizedText, ["Descarga", "Port of discharge"]));
@@ -244,6 +275,7 @@ export function extractCaseData(text: string, fileName: string, type: DocumentTy
     referencia: reference,
     csClaimNo,
     assured,
+    consignee,
     opponent,
     vessel: vesselAndVoyage.vessel,
     voyage: vesselAndVoyage.voyage,
@@ -329,6 +361,19 @@ async function readPdf(file: File): Promise<ReadContentResult> {
   return { text: ocrText, ocrUsed: Boolean(ocrText.trim()) };
 }
 
+async function readImageWithOcr(file: File): Promise<ReadContentResult> {
+  if (typeof document === "undefined") return { text: "", ocrUsed: false };
+  const { createWorker } = await import("tesseract.js");
+  const worker = await createWorker("spa+eng");
+  try {
+    const result = await worker.recognize(file);
+    const text = result.data.text?.slice(0, MAX_TEXT_LENGTH) || "";
+    return { text, ocrUsed: Boolean(text.trim()) };
+  } finally {
+    await worker.terminate();
+  }
+}
+
 async function readSpreadsheet(file: File) {
   const workbook = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: "array" });
   return workbook.SheetNames.map((sheetName) => XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName])).join("\n").slice(0, MAX_TEXT_LENGTH);
@@ -337,6 +382,7 @@ async function readSpreadsheet(file: File) {
 async function readContent(file: File) {
   const extension = file.name.split(".").pop()?.toLowerCase();
   if (extension === "pdf") return readPdf(file);
+  if (file.type.startsWith("image/") || ["png", "jpg", "jpeg", "webp", "tif", "tiff"].includes(extension || "")) return readImageWithOcr(file);
   if (["xls", "xlsx", "csv"].includes(extension || "")) return { text: extension === "csv" ? await file.text() : await readSpreadsheet(file), ocrUsed: false };
   if (["txt", "json", "xml", "md"].includes(extension || "")) return { text: await file.text(), ocrUsed: false };
   return { text: "", ocrUsed: false };
@@ -381,6 +427,7 @@ export function mergeExtractedData(drafts: UploadDraft[], fallbackReference: str
     .map((item) => item[key])
     .filter((value): value is string => typeof value === "string" && Boolean(value.trim()));
   const assured = first("assured");
+  const consignee = first("consignee");
   const opponent = first("opponent");
   const vessel = first("vessel");
   const voyage = first("voyage");
@@ -392,6 +439,7 @@ export function mergeExtractedData(drafts: UploadDraft[], fallbackReference: str
   const placeOfShipment = shipmentCandidates.sort((left, right) => right.length - left.length)[0];
   const placeOfDischarge = first("placeOfDischarge");
   const dateOfDischarge = first("dateOfDischarge");
+  const conflictosDetectados = detectExtractionConflicts(data);
   const sources = [...new Set(data.flatMap((item) => item.fuentesCausa || []))];
   const references = [...new Set(data.flatMap((item) => item.referenciasDetectadas || []))];
   const prioritized = data.find((item) => item.tipoCaso === "Daño de temperatura" || item.tipoCaso === "Daño de condición o manipulación") || data[0];
@@ -415,12 +463,16 @@ export function mergeExtractedData(drafts: UploadDraft[], fallbackReference: str
           tipoCambio: firstLoss("tipoCambio"),
           tipoCambioFecha: firstLoss("tipoCambioFecha"),
           tipoCambioFuente: firstLoss("tipoCambioFuente"),
+          cantidadAfectada: firstLoss("cantidadAfectada"),
+          unidadCalculo: firstLoss("unidadCalculo"),
+          metodo1_cantidadReferencia: firstLoss("metodo1_cantidadReferencia"),
         metodo1_liquidacionReal: firstLoss("metodo1_liquidacionReal"),
         metodo1_liquidacionComparativa: firstLoss("metodo1_liquidacionComparativa"),
+        metodo2_cantidadReferencia: firstLoss("metodo2_cantidadReferencia"),
         metodo2_valorReporteMercado: firstLoss("metodo2_valorReporteMercado"),
         metodo2_liquidacionReal: firstLoss("metodo2_liquidacionReal"),
         metodo3_valorFactura: firstLoss("metodo3_valorFactura"),
-        metodo3_ventaBrutaDestino: firstLoss("metodo3_ventaBrutaDestino"),
+        metodo3_ventaNetaDestino: firstLoss("metodo3_ventaNetaDestino"),
         rubrosAdicionales: lossData.flatMap((item) => item.rubrosAdicionales),
         montoFinalReclamo: firstLoss("montoFinalReclamo"),
         fuentes: [...new Set(lossData.flatMap((item) => item.fuentes))]
@@ -430,6 +482,7 @@ export function mergeExtractedData(drafts: UploadDraft[], fallbackReference: str
     referencia: first("referencia") || references[0] || fallbackReference,
     csClaimNo: first("csClaimNo"),
     assured,
+    consignee,
     opponent,
     vessel,
     voyage: first("voyage"),
@@ -445,6 +498,7 @@ export function mergeExtractedData(drafts: UploadDraft[], fallbackReference: str
     causaPotencial: prioritized?.causaPotencial || first("causaPotencial"),
     fuentesCausa: sources,
     referenciasDetectadas: references.length ? references : [fallbackReference],
+    conflictosDetectados,
     propuestaPerdida
   };
 }

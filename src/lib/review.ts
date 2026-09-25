@@ -1,4 +1,11 @@
-import { documentCompleteness, DOCUMENT_TYPES, pendingField } from "./business";
+import {
+  documentChecklist,
+  isChecklistItemComplete,
+  isTransferDocumentRuleSatisfied,
+  pendingField,
+  transferCauseIsConfirmed,
+  transferDocumentRules
+} from "./business";
 import { CalculoPerdida, Caso, Documento, ReviewReport, TransferDestination } from "../types/domain";
 
 function calculationMethod(calculo?: CalculoPerdida) {
@@ -17,11 +24,42 @@ export function buildReviewReport(
   generatedBy: string,
   destination: TransferDestination
 ): ReviewReport {
-  const completeness = documentCompleteness(documentos);
-  const availableDocuments = DOCUMENT_TYPES.filter((type) => completeness.available.has(type));
-  const missingDocuments = completeness.missing;
+  const checklistItems = documentChecklist(caso, documentos, calculo);
+  const availableDocuments = checklistItems.filter((item) => isChecklistItemComplete(item)).map((item) => item.type);
+  const contextualMissing = checklistItems.filter((item) => item.required && !isChecklistItemComplete(item)).map((item) => item.type);
+  const transferRules = transferDocumentRules();
+  const blockingTransferDocuments = transferRules.filter((rule) => !isTransferDocumentRuleSatisfied(rule, documentos) && !rule.pendingAllowed);
+  const allowedPendingTransferDocuments = transferRules.filter((rule) => !isTransferDocumentRuleSatisfied(rule, documentos) && rule.pendingAllowed);
+  const loaRule = transferRules.find((rule) => rule.id === "loa-subrogation");
+  const aorRule = transferRules.find((rule) => rule.id === "aor");
+  const lettersReady = Boolean(
+    loaRule && isTransferDocumentRuleSatisfied(loaRule, documentos) &&
+    aorRule && (isTransferDocumentRuleSatisfied(aorRule, documentos) || aorRule.pendingAllowed)
+  );
+  const contextualMissingLabels = contextualMissing.map((type) => transferRules.find((rule) => rule.types.includes(type))?.label || type);
+  const missingDocuments = [...new Set([...contextualMissingLabels, ...blockingTransferDocuments.map((rule) => rule.label)])];
   const pendingActions: string[] = missingDocuments.map((type) => `Solicitar: ${type}`);
+  const missingCaseFields = [
+    ["Referencia FIS", caso.id],
+    ["Commodity", caso.cargo],
+    ["Puerto de embarque", caso.placeOfShipment],
+    ["Puerto de descarga", caso.placeOfDischarge],
+    ["Fecha de embarque", caso.dateOfShipment],
+    ["Fecha de descarga", caso.dateOfDischarge],
+    ["Monto a reclamar informado", caso.claimAmount ?? calculo?.montoFinalReclamo],
+    ["Nombre del shipper / asegurado", caso.assured],
+    ["Nombre del consignatario", caso.consignee],
+    ["Carrier responsable", caso.opponent]
+  ].filter(([, value]) => value === undefined || value === "" || value === null);
   const method = calculationMethod(calculo);
+  const hasMinimumCaseData = missingCaseFields.length === 0 && Boolean(caso.claimHandler.trim() && caso.vessel.trim());
+  const causeReviewed = transferCauseIsConfirmed(caso);
+  const calculationReviewed = Boolean(
+    method && calculo?.montoFinalReclamo !== undefined && (calculo.justificacionSeleccion?.trim().length ?? 0) >= 10
+  );
+  const prescriptionReady = Boolean(
+    caso.dateOfDischarge && caso.jurisdiccion && caso.fechaPrescripcion && caso.dateOfDischargeType !== "ETA"
+  );
   const inferredCauseSources = documentos
     .filter((documento) =>
       ["BL", "Registros de termógrafos", "Informes de QC en origen y destino", "Reportes de inspección"].includes(documento.tipoDocumento)
@@ -29,19 +67,83 @@ export function buildReviewReport(
     .map((documento) => documento.tipoDocumento);
   const causeSources = [...new Set(caso.fuentesCausa?.length ? caso.fuentesCausa : inferredCauseSources)];
 
-  if (!caso.analisisCausa?.conclusionFinal && !caso.causaPotencial) {
-    pendingActions.push("Confirmar la causa potencial y su conclusión en la pestaña Análisis.");
+  if (!hasMinimumCaseData) {
+    pendingActions.push(`Completar datos mínimos de traspaso: ${missingCaseFields.map(([label]) => label).join(", ") || "nave o handler"}.`);
   }
-  if (!method) {
-    pendingActions.push("Seleccionar y justificar el cálculo aplicable en la pestaña Cálculo.");
+  if (!causeReviewed) {
+    pendingActions.push("Confirmar en Análisis una causa válida: Temperature, Delay, Market Loss, Mishanding, Roberry, Falla CT o Falla AC.");
   }
-  if (!caso.fechaPrescripcion) {
+  if (!calculationReviewed) {
+    pendingActions.push("Seleccionar, completar y justificar el cálculo aplicable en la pestaña Cálculo.");
+  }
+  if (!prescriptionReady && caso.dateOfDischargeType !== "ETA") {
     pendingActions.push("Completar fecha de descarga y jurisdicción para calcular prescripción.");
   }
+  if (caso.dateOfDischargeType === "ETA") {
+    pendingActions.push("Confirmar la fecha real de descarga antes del traspaso; la fecha actual es una ETA.");
+  }
+  if (generatedBy !== caso.claimHandler) {
+    pendingActions.push("El traspaso debe ser aprobado y ejecutado por el Handler responsable del caso.");
+  }
+
+  const closureChecklist = [
+    {
+      id: "case-data",
+      label: "Datos mínimos del expediente",
+      status: hasMinimumCaseData ? "Cumplido" as const : "Pendiente" as const,
+      detail: hasMinimumCaseData ? "Referencia, commodity, puertos, fechas, shipper, consignatario, carrier, nave y monto informados." : "Faltan uno o más datos mínimos contractuales del expediente."
+    },
+    {
+      id: "documents",
+      label: "Checklist documental",
+      status: blockingTransferDocuments.length === 0 ? "Cumplido" as const : "Pendiente" as const,
+      detail: blockingTransferDocuments.length === 0
+        ? allowedPendingTransferDocuments.length > 0
+          ? `Documentación mínima cumplida. Pendientes permitidos: ${allowedPendingTransferDocuments.map((rule) => rule.label).join(", ")}.`
+          : "Documentación mínima de traspaso disponible."
+        : `Faltan documentos obligatorios: ${blockingTransferDocuments.map((rule) => rule.label).join(", ")}.`
+    },
+    {
+      id: "letters",
+      label: "Cartas obligatorias",
+      status: lettersReady ? "Cumplido" as const : "Pendiente" as const,
+      detail: lettersReady
+        ? isTransferDocumentRuleSatisfied(aorRule!, documentos)
+          ? "LoA / subrogación y AoR disponibles."
+          : "LoA / subrogación disponible. AoR pendiente permitido por FIS."
+        : "Debe estar disponible la Carta de subrogación o LoA; el AoR puede quedar pendiente como excepción."
+    },
+    {
+      id: "cause",
+      label: "Causa y mérito revisados",
+      status: causeReviewed ? "Cumplido" as const : "Pendiente" as const,
+      detail: causeReviewed
+        ? `Causa válida confirmada por ${caso.analisisCausa?.confirmadoPor}. El mérito bajo no bloquea el traspaso.`
+        : "La causa debe confirmarse desde la pestaña Análisis y corresponder a una causal contractual."
+    },
+    {
+      id: "calculation",
+      label: "Cálculo seleccionado y justificado",
+      status: calculationReviewed ? "Cumplido" as const : "Pendiente" as const,
+      detail: calculationReviewed ? `${method} con monto final y justificación registrada.` : "Falta método, monto final o justificación suficiente."
+    },
+    {
+      id: "prescription",
+      label: "Prescripción confirmada",
+      status: prescriptionReady ? "Cumplido" as const : "Pendiente" as const,
+      detail: prescriptionReady ? "Calculada desde una fecha real de descarga." : caso.dateOfDischargeType === "ETA" ? "La ETA debe reemplazarse o confirmarse como fecha real." : "Falta fecha de descarga, jurisdicción o fecha de prescripción."
+    },
+    {
+      id: "handler-approval",
+      label: "Aprobación del Handler responsable",
+      status: generatedBy === caso.claimHandler ? "Cumplido" as const : "Pendiente" as const,
+      detail: generatedBy === caso.claimHandler ? `Informe generado por ${generatedBy}.` : `Debe revisar y aprobar ${caso.claimHandler}.`
+    }
+  ];
+  const ready = closureChecklist.every((item) => item.status === "Cumplido");
 
   const cause = caso.causaPotencial || caso.analisisCausa?.conclusionFinal;
   const merit = caso.analisisCausa?.meritoSugerido || (cause ? "Pendiente" : undefined);
-  const ready = pendingActions.length === 0;
   const selectedCalculation = method
     ? {
         method,
@@ -71,14 +173,17 @@ export function buildReviewReport(
     availableDocuments,
     missingDocuments,
     pendingActions,
+    closureChecklist,
     recommendedCause: cause,
     causeSources,
     preliminaryMerit: merit,
     selectedCalculation,
-    checklist: DOCUMENT_TYPES.map((label) => ({
-      label,
-      status: completeness.available.has(label) ? "Disponible" : "Pendiente"
-    }))
+    checklist: checklistItems
+      .filter((item) => item.required)
+      .map((item) => ({
+        label: item.type,
+        status: isChecklistItemComplete(item) ? "Disponible" : "Pendiente"
+      }))
   };
 }
 
@@ -109,6 +214,9 @@ export function buildReviewReportText(report: ReviewReport) {
     "",
     "CÁLCULO SELECCIONADO",
     calculation,
+    "",
+    "CHECKLIST DE CIERRE LOCAL",
+    ...(report.closureChecklist || []).map((gate) => `${gate.status === "Cumplido" ? "[OK]" : "[PENDIENTE]"} ${gate.label}: ${gate.detail}`),
     "",
     "DOCUMENTOS DISPONIBLES",
     ...(report.availableDocuments.length > 0 ? report.availableDocuments.map((item) => `- ${item}`) : ["- Ninguno"]),

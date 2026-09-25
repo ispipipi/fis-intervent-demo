@@ -7,6 +7,7 @@ import {
   Caso,
   DamageAnalysis,
   DocumentType,
+  DocumentStatus,
   Documento,
   NewCaseInput,
   ReviewReport,
@@ -19,21 +20,26 @@ import {
   TemplateConfig,
   CalculationMethodId,
   TemplateId,
-  DischargeDateType
+  DischargeDateType,
+  LetterApproval,
+  InactivityAlertChannel,
+  InactivityAlertState
 } from "../types/domain";
 import {
   buildCasoFromInput,
   calculateLoss,
   calculatePrescription,
   classifyDocument,
+  isCanonicalCaseReference,
+  normalizeCaseReference,
   renamedFile,
   STORAGE_PREFIX,
-  INSPECTORS
+  INSPECTORS,
+  INSPECTOR_EVOLUTION_ENABLED,
+  lastMovementAt
 } from "../lib/business";
 import { buildReviewReport } from "../lib/review";
-import { loadHistoryStore, saveHistoryBatch } from "../lib/historyStorage";
 import { loadBundledHistory } from "../lib/historySeed";
-import { historicalRecordKey } from "../lib/historyImport";
 import { defaultTemplateConfigs } from "../lib/templates";
 import { DEFAULT_CALCULATION_METHODS } from "../lib/maintainers";
 
@@ -53,17 +59,24 @@ type DemoState = {
   updateCase: (casoId: string, patch: Partial<Caso>) => void;
   updateCaseDetails: (
     casoId: string,
-    patch: Partial<Pick<Caso, "id" | "dateOfDischarge" | "dateOfDischargeType" | "jurisdiccion">>
+    patch: Partial<Pick<Caso, "id" | "dateOfDischarge" | "dateOfDischargeType" | "jurisdiccion">>,
+    referenceChangeReason?: string
   ) => { ok: boolean; error?: string };
   prepareUpload: (files: FileList | File[]) => UploadDraft[];
   confirmUpload: (casoId: string, drafts: UploadDraft[]) => void;
+  updateDocumentStatus: (casoId: string, type: DocumentType, status: DocumentStatus) => { ok: boolean; error?: string };
+  requestMissingDocuments: (casoId: string, types: DocumentType[]) => { ok: boolean; error?: string };
+  registerInactivityAlertSent: (casoId: string, channel: InactivityAlertChannel) => { ok: boolean; error?: string };
+  markInactivityAlertRead: (casoId: string) => { ok: boolean; error?: string };
+  resolveInactivityAlert: (casoId: string, action: "cerrar" | "silenciar") => { ok: boolean; error?: string };
   removeDocument: (documentId: string) => void;
   saveAnalysis: (casoId: string, analysis: DamageAnalysis) => void;
   saveCalculation: (calculation: CalculoPerdida) => { ok: boolean; error?: string };
   generateReviewReport: (casoId: string, destination: TransferDestination) => ReviewReport | undefined;
-  transitionCase: (casoId: string, nextStatus: CaseStatus, detail: string) => void;
+  transitionCase: (casoId: string, nextStatus: CaseStatus, detail: string) => { ok: boolean; error?: string };
   revertCase: (casoId: string, previousStatus: CaseStatus, reason: string) => { ok: boolean; error?: string };
-  registerLetter: (casoId: string, detail: string) => void;
+  registerLetter: (casoId: string, templateId: TemplateId, fingerprint: string, detail: string) => void;
+  approveLetter: (casoId: string, approval: Pick<LetterApproval, "templateId" | "version" | "fingerprint">) => { ok: boolean; error?: string };
   assignInspector: (casoId: string, inspector?: string) => { ok: boolean; error?: string };
   saveInspection: (
     casoId: string,
@@ -73,7 +86,6 @@ type DemoState = {
   resetCalculationMethods: () => void;
   updateTemplateConfig: (id: TemplateId, patch: Partial<Omit<TemplateConfig, "id" | "updatedAt">>) => void;
   resetTemplateConfigs: () => void;
-  importHistoricalCases: (batch: HistoryImportBatch, sourceFile: Blob) => Promise<number>;
   hydrateHistoricalCases: () => Promise<void>;
   resetDemo: () => void;
 };
@@ -109,7 +121,6 @@ const seedCases: Caso[] = [
     placeOfDischarge: "Busan",
     dateOfDischarge: dateOffset(-350),
     surveyor: "Hyopsung Surveyors",
-    inspectorAsignado: "Valentina Soto",
     claimAmount: 68928,
     jurisdiccion: "LaHaya",
     fechaPrescripcion: calculatePrescription(dateOffset(-350), "LaHaya"),
@@ -139,7 +150,6 @@ const seedCases: Caso[] = [
     placeOfDischarge: "Valparaíso",
     dateOfDischarge: dateOffset(-650),
     surveyor: "Global Marine Survey",
-    inspectorAsignado: "Valentina Soto",
     claimAmount: 41100,
     jurisdiccion: "Hamburgo",
     fechaPrescripcion: calculatePrescription(dateOffset(-650), "Hamburgo"),
@@ -257,18 +267,53 @@ function addDefaultInspectorAssignments(casos: Caso[]) {
 
 function migrateLegacyTransferLabels(persistedState: unknown): Partial<DemoState> {
   const persisted = (persistedState || {}) as Partial<DemoState>;
+  const baseTemplates = defaultTemplateConfigs();
+  const baseCalculationMethods = persisted.calculationMethods?.map((method) => ({
+    ...method,
+    formula: DEFAULT_CALCULATION_METHODS.find((baseMethod) => baseMethod.id === method.id)?.formula || method.formula
+  })) || DEFAULT_CALCULATION_METHODS.map((method) => ({ ...method }));
   return {
     ...persisted,
+    usuario: !INSPECTOR_EVOLUTION_ENABLED && persisted.usuario?.role === "Inspector"
+      ? { role: "Handler" as const, nombre: "Emely Lambraño" }
+      : persisted.usuario,
     casos: persisted.casos?.map((caso) => ({
-      ...caso,
+      ...(() => {
+        const sanitizedCase = { ...caso };
+        if (!INSPECTOR_EVOLUTION_ENABLED) {
+          delete sanitizedCase.inspectorAsignado;
+          delete sanitizedCase.fechaInspeccion;
+          delete sanitizedCase.inspeccionConjunta;
+          delete sanitizedCase.resumenInspeccion;
+        }
+        return sanitizedCase;
+      })(),
       estado: ((caso.estado as string) === "Traspasado a Logistic" ? "Traspasado a Lawgistic" : caso.estado) as CaseStatus,
       informeRevision: caso.informeRevision
         ? {
             ...caso.informeRevision,
+            status: "Con observaciones",
+            ready: false,
+            pendingActions: [...new Set([...caso.informeRevision.pendingActions, "Regenerar el informe para validar el checklist de cierre actualizado."])],
             destination: ((caso.informeRevision.destination as string) === "Logistic" ? "Lawgistic" : caso.informeRevision.destination) as TransferDestination
           }
         : undefined
-    }))
+    })),
+    calculationMethods: baseCalculationMethods,
+    templateConfigs: persisted.templateConfigs?.map((template) => {
+      const baseTemplate = baseTemplates.find((item) => item.id === template.id);
+      const legacyClaimNotice = template.id === "claim-notice"
+        && [template.title, template.shortTitle].some((value) => value.trim().toLowerCase() === "claim notice");
+      const mergedTemplate = { ...baseTemplate, ...template };
+      return legacyClaimNotice
+        ? {
+            ...mergedTemplate,
+            title: "Claim Notice / Notificación a la naviera",
+            shortTitle: "Claim Notice",
+            description: "Carta contractual de notificación y solicitud de reembolso a la naviera. En este alcance representa el Claim Notice y no una quinta carta separada."
+          }
+        : mergedTemplate as TemplateConfig;
+    })
   };
 }
 
@@ -278,14 +323,16 @@ export const useDemoStore = create<DemoState>()(
       ...initialState(),
       setUsuario: (usuario) =>
         set((state) => ({
-          usuario,
+          usuario: !INSPECTOR_EVOLUTION_ENABLED && usuario.role === "Inspector"
+            ? { role: "Handler" as const, nombre: "Emely Lambraño" }
+            : usuario,
           casos:
-            usuario.role === "Inspector" && !state.casos.some((caso) => caso.inspectorAsignado)
+            INSPECTOR_EVOLUTION_ENABLED && usuario.role === "Inspector" && !state.casos.some((caso) => caso.inspectorAsignado)
               ? addDefaultInspectorAssignments(state.casos)
               : state.casos
         })),
       createCase: (input, complete) => {
-        const caso = buildCasoFromInput(input, get().casos.length, complete);
+        const caso = buildCasoFromInput(input, get().casos, complete);
         const detail = complete ? "Caso creado desde Guardar y continuar." : "Borrador creado desde Nuevo caso.";
         set((state) => ({
           casos: [caso, ...state.casos],
@@ -305,7 +352,7 @@ export const useDemoStore = create<DemoState>()(
       },
       updateCase: (casoId, patch) => {
         const currentCase = get().casos.find((caso) => caso.id === casoId);
-        if (!currentCase || isTransferredCase(currentCase)) return;
+        if (!currentCase) return;
         const nowIso = new Date().toISOString();
         set((state) => ({
           casos: state.casos.map((caso) =>
@@ -331,18 +378,29 @@ export const useDemoStore = create<DemoState>()(
           ]
         }));
       },
-      updateCaseDetails: (casoId, patch) => {
+      updateCaseDetails: (casoId, patch, referenceChangeReason) => {
         const state = get();
         const current = state.casos.find((caso) => caso.id === casoId);
         if (!current) return { ok: false, error: "No se encontró el caso para actualizar." };
-        if (isTransferredCase(current)) return { ok: false, error: "El caso está traspasado y se encuentra en modo solo lectura." };
+        if (!current) return { ok: false, error: "No se encontró el caso para actualizar." };
 
-        const nextId = patch.id?.trim() || current.id;
-        const normalizedNextId = nextId.toLocaleLowerCase();
+        const nextId = patch.id?.trim().toUpperCase() || current.id;
+        const normalizedNextId = normalizeCaseReference(nextId);
         const duplicate = state.casos.some(
-          (caso) => caso.id !== casoId && caso.id.trim().toLocaleLowerCase() === normalizedNextId
+          (caso) => caso.id !== casoId && normalizeCaseReference(caso.id) === normalizedNextId
         );
         if (duplicate) return { ok: false, error: "La referencia ya existe en otro caso." };
+        if (nextId !== current.id) {
+          if (state.usuario.role !== "Handler" || state.usuario.nombre !== current.claimHandler) {
+            return { ok: false, error: "Solo el Handler responsable puede modificar la referencia." };
+          }
+          if (!referenceChangeReason?.trim()) {
+            return { ok: false, error: "Debes indicar el motivo de modificación de la referencia." };
+          }
+          if (!isCanonicalCaseReference(nextId)) {
+            return { ok: false, error: "La nueva referencia debe usar el formato canónico PRE-FIS-... o PRE-FIS/CLIENTE-... ." };
+          }
+        }
 
         const nextDate = patch.dateOfDischarge === undefined ? current.dateOfDischarge : patch.dateOfDischarge;
         const nextDateType: DischargeDateType | undefined =
@@ -392,7 +450,7 @@ export const useDemoStore = create<DemoState>()(
               casoId: nextId,
               timestamp: nowIso,
               tipoEvento: "caso_actualizado",
-              detalle: `Datos clave actualizados: ${changedFields.join("; ") || "sin cambios"}. Prescripción recalculada.`,
+              detalle: `Datos clave actualizados: ${changedFields.join("; ") || "sin cambios"}.${nextId !== current.id ? ` Motivo de cambio de referencia: ${referenceChangeReason}.` : ""} Prescripción recalculada.`,
               usuario: state.usuario.nombre
             },
             ...state.bitacora.map((evento) => (evento.casoId === casoId ? { ...evento, casoId: nextId } : evento))
@@ -408,7 +466,7 @@ export const useDemoStore = create<DemoState>()(
       confirmUpload: (casoId, drafts) => {
         const state = get();
         const caso = state.casos.find((item) => item.id === casoId);
-        if (!caso || isTransferredCase(caso)) return;
+        if (!caso) return;
         const nowIso = new Date().toISOString();
         const currentDocs = state.documentos.filter((item) => item.casoId === casoId);
         const draftKeys = new Set<string>();
@@ -435,10 +493,12 @@ export const useDemoStore = create<DemoState>()(
               tipoDocumento: draft.tipoDocumento,
               nombreArchivo,
               originalName: draft.originalName,
-              pathMock: `mock://docs/${casoId}/${nombreArchivo}`,
-              disponible: true,
+                  pathMock: `mock://docs/${casoId}/${nombreArchivo}`,
+                  disponible: true,
+                  estadoDocumental: "recibido",
               fechaCarga: nowIso,
               clasificacionConfianza: draft.clasificacionConfianza,
+              estadoExtraccion: draft.estadoExtraccion,
               relativePath: draft.relativePath,
               textoExtraido: draft.textoExtraido,
               datosExtraidos: draft.datosExtraidos,
@@ -461,11 +521,173 @@ export const useDemoStore = create<DemoState>()(
           ]
         }));
       },
+      updateDocumentStatus: (casoId, type, status) => {
+        const state = get();
+        const caso = state.casos.find((item) => item.id === casoId);
+        if (!caso) return { ok: false, error: "No se encontró el caso." };
+        if (!caso) return { ok: false, error: "No se encontró el caso." };
+        if (state.usuario.role !== "Handler" || state.usuario.nombre !== caso.claimHandler) {
+          return { ok: false, error: "Solo el Handler responsable puede modificar el checklist documental." };
+        }
+        if (status === "recibido" && !state.documentos.some((documento) => documento.casoId === casoId && documento.tipoDocumento === type && documento.disponible)) {
+          return { ok: false, error: "No puedes marcar como recibido un documento que aún no está cargado." };
+        }
+        const nowIso = new Date().toISOString();
+        set((current) => ({
+          casos: current.casos.map((item) => item.id === casoId
+            ? { ...item, documentStatuses: { ...item.documentStatuses, [type]: status }, ultimaActualizacion: nowIso }
+            : item),
+          documentos: current.documentos.map((documento) => documento.casoId === casoId && documento.tipoDocumento === type
+            ? { ...documento, estadoDocumental: status }
+            : documento),
+          bitacora: [
+            {
+              id: crypto.randomUUID(),
+              casoId,
+              timestamp: nowIso,
+              tipoEvento: "caso_actualizado",
+              detalle: `Estado documental actualizado: ${type} → ${status}.`,
+              usuario: current.usuario.nombre
+            },
+            ...current.bitacora
+          ]
+        }));
+        return { ok: true };
+      },
+      requestMissingDocuments: (casoId, types) => {
+        const state = get();
+        const caso = state.casos.find((item) => item.id === casoId);
+        if (!caso) return { ok: false, error: "No se encontró el caso." };
+        if (!caso) return { ok: false, error: "No se encontró el caso." };
+        if (state.usuario.role !== "Handler" || state.usuario.nombre !== caso.claimHandler) {
+          return { ok: false, error: "Solo el Handler responsable puede solicitar documentos." };
+        }
+        const requestedTypes = [...new Set(types)];
+        if (requestedTypes.length === 0) return { ok: false, error: "No hay documentos faltantes para solicitar." };
+        const nowIso = new Date().toISOString();
+        set((current) => ({
+          casos: current.casos.map((item) => item.id === casoId
+            ? {
+                ...item,
+                documentStatuses: requestedTypes.reduce((statuses, type) => ({ ...statuses, [type]: "solicitado" as DocumentStatus }), { ...item.documentStatuses }),
+                ultimaActualizacion: nowIso
+              }
+            : item),
+          bitacora: [
+            {
+              id: crypto.randomUUID(),
+              casoId,
+              timestamp: nowIso,
+              tipoEvento: "documento_solicitado",
+              detalle: `Documentos solicitados: ${requestedTypes.join(", ")}.`,
+              usuario: current.usuario.nombre
+            },
+            ...current.bitacora
+          ]
+        }));
+        return { ok: true };
+      },
+      registerInactivityAlertSent: (casoId, channel) => {
+        const state = get();
+        const caso = state.casos.find((item) => item.id === casoId);
+        const isResponsibleHandler = state.usuario.role === "Handler" && caso?.claimHandler === state.usuario.nombre;
+        if (!caso) return { ok: false, error: "No se encontró el caso." };
+        if (!isResponsibleHandler && state.usuario.role !== "Gerente") {
+          return { ok: false, error: "Solo el Handler responsable o Gerente puede registrar el aviso." };
+        }
+        const nowIso = new Date().toISOString();
+        set((current) => ({
+          casos: current.casos.map((item) => item.id === casoId
+            ? {
+                ...item,
+                alertaInactividad: {
+                  ...(item.alertaInactividad || {}),
+                  estado: "abierta",
+                  ...(channel === "plataforma" ? { lastPlatformSentAt: nowIso } : { lastEmailSentAt: nowIso })
+                } as InactivityAlertState
+              }
+            : item),
+          bitacora: [
+            {
+              id: crypto.randomUUID(),
+              casoId,
+              timestamp: nowIso,
+              tipoEvento: "alerta_inactividad_enviada",
+              detalle: `Aviso de inactividad registrado por ${channel}. Destinatarios: Handler responsable y Gerente.`,
+              usuario: current.usuario.nombre
+            },
+            ...current.bitacora
+          ]
+        }));
+        return { ok: true };
+      },
+      markInactivityAlertRead: (casoId) => {
+        const state = get();
+        const caso = state.casos.find((item) => item.id === casoId);
+        const isResponsibleHandler = state.usuario.role === "Handler" && caso?.claimHandler === state.usuario.nombre;
+        if (!caso) return { ok: false, error: "No se encontró el caso." };
+        if (!isResponsibleHandler && state.usuario.role !== "Gerente") {
+          return { ok: false, error: "Solo el Handler responsable o Gerente puede marcar el aviso." };
+        }
+        const nowIso = new Date().toISOString();
+        set((current) => ({
+          casos: current.casos.map((item) => item.id === casoId
+            ? { ...item, alertaInactividad: { ...(item.alertaInactividad || {}), estado: "abierta", readAt: nowIso } as InactivityAlertState }
+            : item),
+          bitacora: [
+            {
+              id: crypto.randomUUID(),
+              casoId,
+              timestamp: nowIso,
+              tipoEvento: "alerta_inactividad_leida",
+              detalle: "Aviso de inactividad marcado como leído.",
+              usuario: current.usuario.nombre
+            },
+            ...current.bitacora
+          ]
+        }));
+        return { ok: true };
+      },
+      resolveInactivityAlert: (casoId, action) => {
+        const state = get();
+        const caso = state.casos.find((item) => item.id === casoId);
+        if (!caso) return { ok: false, error: "No se encontró el caso." };
+        if (state.usuario.role !== "Gerente") {
+          return { ok: false, error: "Solo Gerente puede cerrar o silenciar una alerta." };
+        }
+        const nowIso = new Date().toISOString();
+        const lastMovement = lastMovementAt(caso, state.bitacora);
+        set((current) => ({
+          casos: current.casos.map((item) => item.id === casoId
+            ? {
+                ...item,
+                alertaInactividad: {
+                  ...(item.alertaInactividad || {}),
+                  estado: action === "cerrar" ? "cerrada" : "silenciada",
+                  lastHandledAt: lastMovement,
+                  readAt: nowIso
+                } as InactivityAlertState
+              }
+            : item),
+          bitacora: [
+            {
+              id: crypto.randomUUID(),
+              casoId,
+              timestamp: nowIso,
+              tipoEvento: "alerta_inactividad_cerrada",
+              detalle: `Alerta de inactividad ${action === "cerrar" ? "cerrada" : "silenciada"} por Gerente.`,
+              usuario: current.usuario.nombre
+            },
+            ...current.bitacora
+          ]
+        }));
+        return { ok: true };
+      },
       removeDocument: (documentId) => {
         const state = get();
         const document = state.documentos.find((doc) => doc.id === documentId);
         const caso = document ? state.casos.find((item) => item.id === document.casoId) : undefined;
-        if (!document || isTransferredCase(caso)) return;
+        if (!document) return;
         const nowIso = new Date().toISOString();
         set((state) => ({
           casos: state.casos.map((item) => item.id === document.casoId ? { ...item, ultimaActualizacion: nowIso } : item),
@@ -485,7 +707,7 @@ export const useDemoStore = create<DemoState>()(
       },
       saveAnalysis: (casoId, analysis) => {
         const currentCase = get().casos.find((caso) => caso.id === casoId);
-        if (!currentCase || isTransferredCase(currentCase)) return;
+        if (!currentCase) return;
         const nowIso = new Date().toISOString();
         set((state) => ({
           casos: state.casos.map((caso) => (caso.id === casoId ? { ...caso, analisisCausa: analysis } : caso)),
@@ -505,7 +727,7 @@ export const useDemoStore = create<DemoState>()(
       saveCalculation: (calculation) => {
         const currentCase = get().casos.find((caso) => caso.id === calculation.casoId);
         if (!currentCase) return { ok: false, error: "No se encontró el caso asociado al cálculo." };
-        if (isTransferredCase(currentCase)) return { ok: false, error: "El caso está traspasado y el cálculo se encuentra bloqueado." };
+        if (!currentCase) return { ok: false, error: "No se encontró el caso asociado al cálculo." };
         const selectedMethod = calculation.ventaAFirme
           ? get().calculationMethods.find((method) => method.id === "firm")
           : calculation.metodoSeleccionado
@@ -517,12 +739,40 @@ export const useDemoStore = create<DemoState>()(
         if (calculation.ventaAFirme && (calculation.notaCreditoValor === undefined || calculation.notaCreditoValor <= 0)) {
           return { ok: false, error: "En venta a firme debes ingresar el valor de la nota de crédito." };
         }
+        const caseDocuments = get().documentos.filter((document) => document.casoId === calculation.casoId && document.disponible);
+        const availableTypes = new Set(caseDocuments.map((document) => document.tipoDocumento));
+        const requiredTypes = calculation.ventaAFirme
+          ? ["Nota de crédito"]
+          : calculation.metodoSeleccionado === "1" || calculation.metodoSeleccionado === "2"
+            ? ["Liquidación por contenedor", "Liquidaciones comparativas o informe de mercado"]
+            : calculation.metodoSeleccionado === "3"
+              ? ["Factura de exportación", "Liquidación por contenedor"]
+              : [];
+        const missingSources = requiredTypes.filter((type) => !availableTypes.has(type as Documento["tipoDocumento"]));
+        if (missingSources.length > 0) {
+          return { ok: false, error: `Falta respaldo documental para cerrar el cálculo: ${missingSources.join(", ")}.` };
+        }
+        if (!calculation.ventaAFirme && (calculation.cantidadAfectada === undefined || calculation.cantidadAfectada <= 0)) {
+          return { ok: false, error: "Indica la cantidad afectada y su unidad antes de cerrar el cálculo." };
+        }
+        if (calculation.metodoSeleccionado === "1" && (calculation.metodo1_cantidadReferencia === undefined || calculation.metodo1_cantidadReferencia <= 0)) {
+          return { ok: false, error: "Indica la cantidad del embarque comparable para validar la unidad de cálculo." };
+        }
+        if (calculation.metodoSeleccionado === "2" && (calculation.metodo2_cantidadReferencia === undefined || calculation.metodo2_cantidadReferencia <= 0)) {
+          return { ok: false, error: "Indica la cantidad del reporte de mercado para validar la unidad de cálculo." };
+        }
         const sourceCurrency = calculation.monedaOrigen || calculation.moneda;
         if (sourceCurrency !== calculation.moneda && (calculation.tipoCambio === undefined || !Number.isFinite(calculation.tipoCambio) || calculation.tipoCambio <= 0)) {
           return { ok: false, error: "Ingresa un tipo de cambio positivo para convertir la moneda de origen." };
         }
         if (sourceCurrency !== calculation.moneda && !calculation.tipoCambioFecha) {
           return { ok: false, error: "Indica la fecha del tipo de cambio aplicado." };
+        }
+        if (sourceCurrency !== calculation.moneda && currentCase.dateOfDischarge && calculation.tipoCambioFecha !== currentCase.dateOfDischarge) {
+          return { ok: false, error: "La fecha del tipo de cambio debe coincidir con la fecha de descarga del contenedor." };
+        }
+        if (sourceCurrency !== calculation.moneda && !calculation.tipoCambioFuente?.trim()) {
+          return { ok: false, error: "Indica la fuente del tipo de cambio. La fuente oficial configurada es Xrate; también se permite una tasa manual documentada." };
         }
         if (calculation.metodoSeleccionado && (calculation.justificacionSeleccion?.trim().length ?? 0) < 10) {
           return { ok: false, error: "La justificación del método seleccionado debe tener al menos 10 caracteres." };
@@ -556,7 +806,7 @@ export const useDemoStore = create<DemoState>()(
       generateReviewReport: (casoId, destination) => {
         const state = get();
         const caso = state.casos.find((item) => item.id === casoId);
-        if (!caso || isTransferredCase(caso)) return undefined;
+        if (!caso) return undefined;
         const calculo = state.calculosPerdida.find((item) => item.casoId === casoId);
         const report = buildReviewReport(
           caso,
@@ -586,8 +836,25 @@ export const useDemoStore = create<DemoState>()(
       },
       transitionCase: (casoId, nextStatus, detail) => {
         const currentCase = get().casos.find((caso) => caso.id === casoId);
-        if (!currentCase || isTransferredCase(currentCase)) return;
-        if (nextStatus.startsWith("Traspasado") && !currentCase.informeRevision?.ready) return;
+        if (!currentCase) return { ok: false, error: "No se encontró el caso." };
+        if (isTransferredCase(currentCase)) return { ok: false, error: "El caso ya fue traspasado y no admite nuevos cambios." };
+        if (nextStatus.startsWith("Traspasado")) {
+          if (get().usuario.role !== "Handler" || get().usuario.nombre !== currentCase.claimHandler) {
+            return { ok: false, error: "Solo el Handler responsable puede ejecutar el traspaso." };
+          }
+          const destination = nextStatus === "Traspasado a FIS" ? "FIS" : "Lawgistic";
+          const freshReport = buildReviewReport(
+            currentCase,
+            get().documentos.filter((item) => item.casoId === casoId),
+            get().calculosPerdida.find((item) => item.casoId === casoId),
+            get().usuario.nombre,
+            destination
+          );
+          if (!currentCase.informeRevision?.ready || currentCase.informeRevision.destination !== destination) {
+            return { ok: false, error: "Genera y revisa nuevamente el informe para el destino seleccionado." };
+          }
+          if (!freshReport.ready) return { ok: false, error: "El traspaso está bloqueado: resuelve el checklist de cierre antes de derivar el caso." };
+        }
         const nowIso = new Date().toISOString();
         set((state) => ({
           casos: state.casos.map((caso) =>
@@ -605,6 +872,7 @@ export const useDemoStore = create<DemoState>()(
             ...state.bitacora
           ]
         }));
+        return { ok: true };
       },
       revertCase: (casoId, previousStatus, reason) => {
         const { usuario } = get();
@@ -629,9 +897,12 @@ export const useDemoStore = create<DemoState>()(
         }));
         return { ok: true };
       },
-      registerLetter: (casoId, detail) => {
+      registerLetter: (casoId, templateId, fingerprint, detail) => {
         const currentCase = get().casos.find((caso) => caso.id === casoId);
-        if (!currentCase || isTransferredCase(currentCase)) return;
+        const approved = currentCase?.cartasAprobadas?.some(
+          (item) => item.templateId === templateId && item.fingerprint === fingerprint
+        );
+        if (!currentCase || !approved) return;
         const nowIso = new Date().toISOString();
         set((state) => ({
           bitacora: [
@@ -647,12 +918,48 @@ export const useDemoStore = create<DemoState>()(
           ]
         }));
       },
+      approveLetter: (casoId, approval) => {
+        const state = get();
+        const currentCase = state.casos.find((caso) => caso.id === casoId);
+        if (!currentCase) return { ok: false, error: "No se encontró el caso." };
+        if (state.usuario.role !== "Handler" || currentCase.claimHandler !== state.usuario.nombre) {
+          return { ok: false, error: "Solo el handler responsable puede aprobar esta carta." };
+        }
+        if (!currentCase) return { ok: false, error: "No se encontró el caso." };
+        const nowIso = new Date().toISOString();
+        set((currentState) => ({
+          casos: currentState.casos.map((caso) =>
+            caso.id === casoId
+              ? {
+                  ...caso,
+                  cartasAprobadas: [
+                    ...(caso.cartasAprobadas || []).filter((item) => item.templateId !== approval.templateId),
+                    { ...approval, approvedAt: nowIso, approvedBy: currentState.usuario.nombre }
+                  ],
+                  ultimaActualizacion: nowIso
+                }
+              : caso
+          ),
+          bitacora: [
+            {
+              id: crypto.randomUUID(),
+              casoId,
+              timestamp: nowIso,
+              tipoEvento: "carta_aprobada",
+              detalle: `Carta ${approval.templateId} aprobada para emisión.`,
+              usuario: currentState.usuario.nombre
+            },
+            ...currentState.bitacora
+          ]
+        }));
+        return { ok: true };
+      },
       assignInspector: (casoId, inspector) => {
         const state = get();
         const current = state.casos.find((caso) => caso.id === casoId);
         if (!current) return { ok: false, error: "No se encontró el caso para asignar." };
         if (state.usuario.role !== "Gerente") return { ok: false, error: "Solo Gerente puede asignar inspectores." };
-        if (isTransferredCase(current)) return { ok: false, error: "El caso está traspasado y no admite cambios de asignación." };
+        if (!current) return { ok: false, error: "No se encontró el caso." };
         const nextInspector = inspector?.trim() || undefined;
         if (nextInspector && !INSPECTORS.includes(nextInspector)) return { ok: false, error: "Selecciona un inspector válido." };
         const nowIso = new Date().toISOString();
@@ -680,7 +987,7 @@ export const useDemoStore = create<DemoState>()(
         if (!current) return { ok: false, error: "No se encontró el caso de inspección." };
         if (state.usuario.role !== "Inspector") return { ok: false, error: "Solo el perfil Inspector puede registrar la inspección." };
         if (current.inspectorAsignado !== state.usuario.nombre) return { ok: false, error: "Este caso no está asignado al inspector actual." };
-        if (isTransferredCase(current)) return { ok: false, error: "El caso está traspasado y la inspección se encuentra bloqueada." };
+        if (!current) return { ok: false, error: "No se encontró el caso." };
         if (!patch.fechaInspeccion) return { ok: false, error: "Ingresa la fecha de inspección." };
         if (patch.inspeccionConjunta === undefined) return { ok: false, error: "Indica si la inspección será conjunta con la naviera." };
         const nowIso = new Date().toISOString();
@@ -728,46 +1035,10 @@ export const useDemoStore = create<DemoState>()(
         }));
       },
       resetTemplateConfigs: () => set({ templateConfigs: defaultTemplateConfigs() }),
-      importHistoricalCases: async (batch, sourceFile) => {
-        const current = get().historico;
-        const currentKeys = new Set<string>();
-        const currentWithoutDuplicates = current.filter((record) => {
-          const key = historicalRecordKey(record);
-          if (currentKeys.has(key)) return false;
-          currentKeys.add(key);
-          return true;
-        });
-        const importedKeys = new Set<string>();
-        const newRecords = batch.records.filter((record) => {
-          const key = historicalRecordKey(record);
-          if (currentKeys.has(key) || importedKeys.has(key)) return false;
-          importedKeys.add(key);
-          return true;
-        });
-        set((state) => ({
-          historico: [...currentWithoutDuplicates, ...newRecords],
-          ultimaImportacionHistorico: {
-            batchId: batch.batchId,
-            fileName: batch.fileName,
-            importedAt: batch.importedAt,
-            records: newRecords.length,
-            sheets: batch.sheets,
-            duplicateReferenceKeys: batch.duplicateReferenceKeys
-          }
-        }));
-        await saveHistoryBatch({ ...batch, records: newRecords }, sourceFile);
-        return newRecords.length;
-      },
       hydrateHistoricalCases: async () => {
         set({ historicoCargando: true });
         try {
-          const stored = await loadHistoryStore();
-          if (stored.records.length > 0) {
-            set({ historico: stored.records, ultimaImportacionHistorico: stored.latest });
-            return;
-          }
           const bundled = await loadBundledHistory();
-          await saveHistoryBatch(bundled.batch, bundled.sourceFile);
           set({
             historico: bundled.batch.records,
             ultimaImportacionHistorico: {
@@ -789,7 +1060,7 @@ export const useDemoStore = create<DemoState>()(
     }),
     {
       name: `${STORAGE_PREFIX}state`,
-      version: 2,
+      version: 10,
       migrate: migrateLegacyTransferLabels,
       partialize: (state) => ({
         usuario: state.usuario,

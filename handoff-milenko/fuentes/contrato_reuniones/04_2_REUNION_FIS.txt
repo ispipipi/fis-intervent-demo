@@ -1,0 +1,355 @@
+TRANSCRIPCIÓN REUNIÓN FIS - 21 JULIO 2026
+
+---
+
+
+3:14 - Julio Espinoza
+  Le pedimos los permisos correspondientes, necesitamos tus informaciones como gran hermano, necesitamos tu consentimiento.
+
+3:20 - Ljubinka Basic
+  ¿Por qué no hay así? Dedito para arriba. Perfecto. Oye, les voy a compartir entonces mi pantalla. Dale. Para poderles mostrar.  Ustedes me cuentan cuando ya estén viendo. Ya estamos viendo un Excel.
+
+3:36 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Un Excel. Ya, súper.
+
+3:39 - Ljubinka Basic
+  Bueno, esta es la famosa planillita que yo les comentaba que utilizamos en Preclaim, en donde se ingresan, el fondo, los casos que van llegando de esta plataforma, que es la de nuestro cliente.  Que es donde les decía que...
+
+3:58 - Julio Espinoza
+  ¿Puedes partir del principio de la plataforma? Y así se ve cuando uno ingresa.
+
+4:29 - Ljubinka Basic
+  Esta UFO que igual es la plataforma máster, porque nosotros en el fondo tenemos cuentas que no son máster para la gente que trabaja en el equipo.  Y les voy a mostrar cómo se ve una cuenta que es una cuenta tipo normal. Claro, que en el fondo se dividen en dos.  Una que tiene acceso al equipo de pre-claim y extra juicio. Y esta otra cuenta que, como dice FIS Judicial, es la que tiene acceso el Departamento de Judicial.  Entonces, solamente las causas que están asignadas para el equipo de extrajudicial, ellos van a poderla ver a través de su cuenta, y las que están asignadas al equipo judicial van a poderlas ver a través de su cuenta.  Segmental principalmente.
+
+5:25 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Sí.
+
+5:26 - Ljubinka Basic
+  Y esta otra, que es la que yo les mostraba, que es la máster, solamente tengo acceso yo y un par de personas en Caltrotter, que son en el fondo los administradores de la plataforma, y tiene algunas diferencias muy sutiles, que en el fondo, por ejemplo, yo puedo eliminar casos, cosa que no tiene esta cuenta.  Así es como se ve, ¿ya? Y bueno, tiene un buscador, pero en el fondo yo había dejado acá a la mano un caso para mostrarle.  Esta es la referencia que yo les comentaba que nosotros le asignamos. Cuando llega un caso y recibimos el correo, lo que hacemos es, en fondo, copiar el nuevo caso, así, tuc, tuc, tuc.  Todos los campos, así como están.
+
+6:16 - Julio Espinoza
+  Todos los campos y los pegamos acá.
+
+6:20 - Ljubinka Basic
+  Y, en el fondo, a partir de acá, porque esto lo ingresamos nosotros manual con el cálculo que hacemos de la pérdida.  Y, bueno, acá queda la parte desde el número ID que tiene, que en el fondo es esta. Y nosotros después se lo vamos sacando porque vamos poniendo el estatus que nosotros le vamos dando al caso.  En el fondo, acá, solicitar o solicitado o calcular la pérdida. Pero yo les puse, me fui a esta pestañita, que son casos que ya se fueron trabajados, entonces están listos para ser traspasados, ya sea el equipo judicial o extrajudicial.  Acá se le asigna el handler, que es quien está manejando el caso, y todo lo demás. Es tal cual de la plataforma hasta acá.  Después esto también se pone de forma manual que el número de viaje que tiene asociada cada nave y eso lo extraemos de la plataforma nosotros.  Y después vamos completando esto con, por ejemplo, documentación que está pendiente y un resumen de lo que se trata el caso.  Luz, Luz, porque aquí estoy tratando de pensar en que esto sea lo más automático posible.
+
+7:25 - Julio Espinoza
+  Entonces, estoy viendo cuáles son las cosas manuales que tú estás diciendo, entendiendo que el resto de la información está en esta planilla que muestra el sistema.  Sí. Entonces, cuando tú me decís, por ejemplo, el número de referencia es un número que ustedes le pusieron este, esta como nomenclatura, ¿significa algo?  Y al final tiene el número este que está desde el sistema, en alguna parte está así.
+
+7:54 - Ljubinka Basic
+  No, no, Esto es un número interno que en el fondo, bueno, siempre va a tener el... pre cuando está en pre-claim y ya cuando se traspasa a extrajudicial o judicial se elimina esa parte.  En el fondo es para saber que el caso ya está listo para ser manejado. Se le agrega el FIS, el transportista en el fondo que se saca acá del oponent, que nosotros ponemos tres, solamente tres letras.  En el fondo CMA, CGM, solamente dejamos CMA. Después se le añade el año en el cual se nos asigna el caso.  ¿Y ese de dónde se saca esa información? De cuando nos llega. En el fondo acá, cuando, por ejemplo, me voy a meter a ese caso en la plataforma, el 3-3-50.
+
+8:41 - Julio Espinoza
+  Estoy pensándolo en un caso real, para que todo eso se arme automático y de tal manera que ya no dependa de alguien que esté metiendo D.O.  porque cualquiera que se equivoque ahí, te puede joder el código. Sí, totalmente.
+
+8:54 - Ljubinka Basic
+  Yo te voy a decir algo que es muy importante y que causa mucha relevancia lo que tú me Bueno, este es el buscador que tiene.  Nosotros nos vamos a la parte de Recovery Reference Number. Lo buscamos por nuestros últimos cuatro dígitos. Y aquí me aparece el caso.  Yo lo pincho y ingreso a la parte de la pestañita de Recovery. Y acá dice Date of Order, que es la fecha en la cual Carl Trotter a nosotros nos encomendó el recupero de este caso.  Y ahí sale en el fondo el 18 del 12 del 2024. A mí, yo sé que es el 2024 porque apenas los casos llegan, que yo les comentaba, nos llega esta notificación por correo.  Tan pronto llega, nosotros creamos el caso, lo sumamos a la planilla y hacemos todo, le ponemos la referencia porque tenemos que ver si es que está cercano a la fecha de prescripción o no.  Y lo que te comentaba de por qué cobra tanta relevancia el número es porque después de la fecha de asignación viene la fecha de prescripción del...  Y según esas fechas nosotros le vamos haciendo seguimiento y todo el caso. En el fondo este prescribe en septiembre del 2026 de este año.  Y después se le asigna el número que en el fondo nosotros vamos teniendo en un grupo de Teams. Cada vez que llega un caso se pone el último número que se utilizó y así se va haciendo seguimiento al siguiente.  Entonces si acá queda mal ingresado, en el fondo se te puede prescribir un caso. Ha pasado que han quedado mal ingresados porque cuál es el seguimiento que hago yo por ejemplo dentro de esta planilla en las revisiones que tengo con las dos chicas que trabajan en el equipo.  Yo me meto así y digo ya cuántos casos tengo que prescriban en septiembre. Entonces si ya quedó desde un inicio mal ingresada esta información, en el fondo tendría...  No en el filtro. Exacto. No queda en el filtro y yo pierdo total seguimiento. Y...
+
+11:00 - Julio Espinoza
+  La referencia que mostraste en la plataforma, ¿tiene hasta qué parte?
+
+11:06 - Rodrigo Sauvalle Escobar (humadis.cl)
+  ¿Hasta después del...? Porque lo vi ahí, ¿tiene Spray? Ah, pero todo viene desde ahí, desde ese campo.
+
+11:14 - Ljubinka Basic
+  No, nosotros lo ingresamos de forma manual. Llega este caso acá, y nosotros la información que ingresamos dentro de la plataforma es la referencia, cuando ya la creamos en la planilla, la pegamos acá, ingresamos el handler de forma manual, en el fondo quien va a trabajar el caso, y ingresamos la fecha de prescripción de forma manual.  La fecha de prescripción se saca de esta pestañita que ya viene esta información, porque esta información la ingresó, puede haber sido dos partes, el inspector que estuvo a cargo del caso y inspeccionó la carga, y si no se inspeccionó la carga, la crea el broker, y crea el caso y...  Y acá, si se dan cuenta, sale el lugar donde descargó el embarque con la relativa fecha de descarga. Y en base a eso nosotros sabemos qué legislación es la aplicable y ponemos la fecha de prescripción.  Como yo les comentaba la vez pasada, todos los países del mundo tienen en general, cuando es transporte marítimo, un año de fecha de prescripción desde la descarga, a excepción de Perú y Chile, que son dos años.  Entonces, cuando es transporte marítimo, y eso nosotros lo vemos acá, de que en el fondo fue por nave, el transportista fue igual, ya consideramos y calculamos, considerando que salió de Chile, que son dos años y prescribe el 18 del 9 del 2026.  Y ahí completamos en el fondo este campo y es la información que también llevamos a nuestra planillita, porque nosotros además, hasta acá en el fondo yo les comentaba que va a salir automático desde...  De la plataforma, que es lo que nosotros copiamos al inicio, pero esto lo vamos a poner manual. Esto es en base a la revisión que hace la persona cuando arma la carpeta del caso que va a indicar todo lo que está faltando y hay que solicitar.  Esto también en base al análisis del caso. Esto también se pone manual, pero también está en la plataforma. Esto también se pone manual y también está en la plataforma, que es la fecha en la cual se embarcó la carga.  Y esto también se pone manual, que es la fecha de time bar, que es la fecha de prescripción del caso.
+
+13:35 - Julio Espinoza
+  Sí, la posibilidad de guardar una copia de este archivo, ponerle cualquier cosa si queréis por el NPR y así podemos ir coloreando las columnas para saber qué es lo que viene del sistema y qué cosas se pueden calcular o qué cosas se necesitan de una lista despegable.  Gracias. ¿Son datos que son fijos o son finitos? ¿Cuál es texto abierto? Porque lo que quiero hacer acá, Ljub, es que ojalá acá todos los que puedan hacer las máquinas lo hagan las máquinas.  Al 100%. Y que ustedes solo tengan que hacer, por ejemplo, temas de criterio. La asignación. ¿A quién se lo pasaba?  Y no me acuerdo cómo se llama la persona.
+
+14:22 - Ljubinka Basic
+  Mira, eso también es automatizable porque yo tengo una cartera de clientes asignadas por Handler. En el fondo, yo tengo el listado en un Excel que cada uno sabe que este es su listado de clientes.  Entonces, ellas solas van y dicen, ah, chuta, llegó este caso que es mi cliente y se autoasigna el caso.  En el fondo, yo no estoy asignando los casos.
+
+14:48 - Julio Espinoza
+  Yo esperaría que el sistema tuviese un mantenedor de clientes y de Handler. Entonces, es un mantenedor nomás donde tú siempre pones los clientes y quienes los van a ver.  Por lo tanto, cuando llegue y se... O lo podemos capturar en el caso, que inmediatamente ya la signerjandre por la regla que pusimos abajo.  Eso no es difícil. Me perdí un poco nomás, hay una parte donde me perdí, no sé si tú lo alcanzaste a cachar bien, Rodrigo, pero como no hemos hecho un tacto del principio, me perdí con un par de fechas, porque no sabía si se ingresan acá, primero en el sistema y después en la planilla, la planilla generalmente es una planilla de paso, ¿cierto?  Que tú la tienes más que nada para un control, pero la información oficial es la que está en el sistema, por lo que entiendo.
+
+15:35 - Ljubinka Basic
+  Pero nosotros nos metemos en una primera instancia el sistema para hacer la recaudación de los datos que incorporamos en nuestra planilla, pero después el trabajo del día a día es siempre con la planilla.  No con la plataforma, porque en el fondo cuando la persona se mete a trabajar el caso, lo que va a hacer es, lo que les comentaba, completar estos campos, que es por ejemplo ver de qué se trata el caso, qué documentación falta.  Pero para poder saber esto, arman una carpeta. En el fondo, 33.50. Me lo estoy imaginando, Luz, porque aquí en pedir no hay engaño.
+
+16:12 - Julio Espinoza
+  Entonces, yo me estoy imaginando que todo esto lo tenga interno el sistema. Es decir, por ejemplo, que cada caso tenga un expediente y el expediente maneje todos los archivos.  Para que no tengan que estar saliendo a otra carpeta a buscar más cosas, que todo esté en el expediente, en este sistema que le vamos a poner, el Liu sistema, por mientras.  Claro.
+
+16:31 - Ljubinka Basic
+  Para mí, en el fondo, lo que yo les decía sería genial que pudiese ser más automático. Pero mira, ellos lo que hacen es meterse a esta pestañita que dice Documents y que sale en toda la documentación que está disponible en el caso.  Pero esto era lo que yo les contaba. O sea, hay que meterse documento a documento, descargarlo. No es como que yo pueda llegar a apretar un botón y decir, ya extraigo todo y armo esta carpeta.  Ellas lo que hicieron fue crear una carpeta. Ponen la referencia y ir documento por documento, guardándolo y manualmente poniendo el nombre de cuál es el documento que se trata.  Entonces, por ejemplo, no sé, abrían el documento este que probablemente estaba guardado con cualquier nombre en la plataforma, revisaban, ah, ya sí, corresponde a un booking, y ahí le cambian el nombre y lo guardan como booking.
+
+17:22 - Julio Espinoza
+  ¿Me dais la dirección exacta de la plataforma?
+
+17:31 - Ljubinka Basic
+  Por momento tengo a mi hacker ahí. Es esta, fizz.carltrotter.de ¿Lo puedes pegar en el chat, Ljub?
+
+17:41 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Sí. copiarla?
+
+17:43 - Ljubinka Basic
+  ¿Más fácil?
+
+17:44 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Sí.
+
+17:46 - Julio Espinoza
+  Por si no, a esa strotter la voy a escribir como cualquier cosa.
+
+17:51 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Claro, porque tenís dentro de la data de la plataforma, tenís como todas las variantes, tenís como campos que los tomáis y los pegáis igual, o...  Otros que no, otros, ¿cachai? Como que entonces todo eso hay que ir identificándolo como en el flujo, para ver, como dice Julio, qué cosa se puede hacer no manual, ¿cachai?  Porque aunque esté en la plataforma, tú igual estáis tomando, copiáis, abrí el Excel, pegáis, ¿sí o no? Así, así, vuelta, ¿cachai?  Entonces eso también habría que idealmente eliminarlo, ¿cachai? Para que no tengáis que, por un caso de, claro, el error es menos probable, porque igual estáis copiando y pegando, pero igual puede haber un error porque te queda un espacio en blanco.
+
+18:29 - Ljubinka Basic
+  No, aparte quita tiempo, te morís y de repente, no sé, de una vez, en un día llegan 20 casos, entonces estar haciendo esto con 20 casos pierde mucho tiempo, que en verdad podría ser mucho más rápido dedicarle ese tiempo más al análisis, ¿cachai?  Porque en el fondo el análisis se saca de la documentación, pero también si es que hubo una inspección, el inspector completó campos que vienen acá, por ejemplo, del claim report, y va a haber sacado información de acá.  Acá hay una mini información respecto al cálculo. Y así van sacando antecedentes. Pero para nosotros sería genial lo que yo les comentaba, que no sé a esta altura si se puede hacer o no, considerando lo que yo te comentaba, Rodrigo, que me confirmaron que no tiene API y que recién en la nueva plataforma que ellos están trabajando, que debiese salir como en octubre.  Va a tenerlo. Ah, ya lo que.
+
+19:36 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Estoy hablando acá con el cabezón del equipo, que se mete por detrás.
+
+19:40 - Julio Espinoza
+  Está revisando la página para ver si es que puede hacer algo. La pregunta es, ¿nosotros podríamos contar, cierto, con login y password de una cuenta, ojalá que no haga nada, que solo vea info?  No sé si era lo que le comentaba un poco a Rodrigo.
+
+19:57 - Ljubinka Basic
+  Lo veo muy difícil porque en el fondo como no es... No plataforma interna nuestra, sino que de nuestro cliente, que es el que nos facilita el uso de ella, son alemanes, o sea, son súper burocráticos, y por ende, no sé qué tan rápido podría llegar a ser que algo así ocurriera, ¿cachai?  Que nos den el acceso a una cuenta, pero como solo de visualización, no sé qué tan fácil sería. Obviamente lo puedo gestionar, pero en tiempos, no sé cuánto van a tomar de, y se van a estar tan dispuestos, en fondo.
+
+20:37 - Julio Espinoza
+  Para hacer pruebas, no contáis con ninguna cuenta que tengáis tuya, en el fondo.
+
+20:43 - Rodrigo Sauvalle Escobar (humadis.cl)
+  ¿Alguna que se pueda usar?
+
+20:44 - Ljubinka Basic
+  Es que todas las que yo tengo son de que podí, en el fondo, cagarla, que podí sacar información o pinchar algo, ¿cachai?  Y bueno, y la plataforma deja registro de todo lo que hace. claro.
+
+21:00 - Julio Espinoza
+  Es un tremendo stopper, porque si no nos podemos meter acá, no tenemos cómo sacar la información, no te podemos ayudar en nada.  Y tenemos dos formas de hacerlo, lo hacemos vía API, que es lo que no tienen, o lo hacemos vía robot.  Y para robot va a necesitar cuenta y password, porque ahí lo que hace un robot es que simula, simula a una persona y hace lo que nosotros lo programamos para hacer.  Entonces, por ejemplo, bajar todos los documentos de cada uno de los casos, lo haría con un clic, que sería muy agradable.  Pero lo que va a hacer es que efectivamente se mete adentro y va haciendo los clics necesarios. Pero claro, sin login, sin password, ni siquiera alguien me dice que no deja ver nada, porque hay algunas páginas que están tan mal hechas que a veces la información igual la tienes, a pesar de que te pida login y password.  Pero esta no. Perfecto. Perfecto.
+
+21:56 - Ljubinka Basic
+  Bueno, lo levanto entonces con nuestro... A ver si es factible que nos brinden una cuenta y password, como para poder ver eso.
+
+22:08 - Julio Espinoza
+  Sin eso no puedo ni avanzarlo, porque todo lo demás que te puedo hacer es maravilloso, pero no te voy a sacar el cacho que el día más te genera dolor y tampoco te voy a automatizar el proceso porque no voy a estar ciego de cuándo llegan los casos.  Al final eso es lo que se necesita, porque acá se le dice en términos informáticos, este es un middleware.  Que finalmente lo que hace es que conecta a lo que tenía en el otro lado contigo sin tener que pasar a través de ellos, sino que es algo mucho más intuitivo, útil.
+
+22:44 - Ljubinka Basic
+  Bueno, yo tengo la información de notificación de cuando me llegan los casos que me llegan por correo, porque la plataforma automáticamente te manda un correo.
+
+22:56 - Julio Espinoza
+  ¿Te llega la info? ¿La misma que está adentro? Eso es lo que quiero revisar.
+
+23:03 - Ljubinka Basic
+  Me llega así, este es un correo de ejemplo. ¿Cá está ahí? Muy bueno, tiene toda la información acá.
+
+23:10 - Julio Espinoza
+  Maravilloso.
+
+23:12 - Ljubinka Basic
+  Y me sale, por ejemplo, oye, estoy en el notebook, me enano esto. Sí, me sale la información de la nave, el número de viaje.  De hecho, me suma el número de VL, que es algo que yo no dejo registro en mi planilla, porque en el fondo no está automático.  Me sale el place of loading, la descarga, el tipo de cargo y el número de reclamo. En el fondo lo que me estaría faltando serían las fechas de embarque y desembarque, que bueno, eso yo lo agrego manual, pero para poder hacer el...
+
+23:50 - Julio Espinoza
+  Está automático, y tú la agregarás manual porque la buscáis de algún lado. Sí, pues la busco en la plataforma.
+
+23:55 - Ljubinka Basic
+  Porque ahí pega ahí, claro. Y me sale el asegurado. No me fijé en eso. Yo no lo vi al menos.
+
+24:04 - Rodrigo Sauvalle Escobar (humadis.cl)
+  No, creo que no.
+
+24:05 - Ljubinka Basic
+  Ah, pero me sale en el correo acá. Me sale acá, el asegurado. Ah, esta la.
+
+24:12 - Julio Espinoza
+  ¿Y más información tenía? Ya, solo eso. Falta toda la otra.
+
+24:18 - Ljubinka Basic
+  y tú, tú, tú. ¿Te faltaría solamente las fechas que decís tú? Sí, que eso lo saco de la plataforma, porque incluso está el viaje que también yo lo pego manual.  Igual. Bueno, no saldría el inspector, pero el inspector en realidad no es tan terrible.
+
+24:36 - Julio Espinoza
+  No, ahí no estarían los documentos tampoco.
+
+24:40 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Claro. No, ahí no están los documentos.
+
+24:42 - Ljubinka Basic
+  Eso es lo malo.
+
+24:44 - Julio Espinoza
+  Los documentos solo están ahí, no viajan por ninguna parte. No.
+
+24:48 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Oye, Liu, pero espérate, tú dices que te dijeron, tu cliente te dijo que va a tener API en octubre.
+
+24:54 - Ljubinka Basic
+  Sí, porque ellos están trabajando, ¿se acuerdan que yo les mencioné que esta plataforma tiene más de... ... ... Están súper obsoletos, saben al respecto porque ellos también están con muchos problemas de temas manuales que tienen que hacer y también quieren automatizar.  Entonces ellos creen que en octubre van a tener el nuevo desarrollo listo, que lo están trabajando con una empresa creada alemana, porque la temporada en el fondo fuerte de la fruta empieza en octubre.  Entonces como que ellos quieren tener ya la plataforma lista para sus clientes, que la puedan utilizar con todas las mejoras que les están aplicando en octubre.  Y ahí sí va a tener API.
+
+25:40 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Claro, y octubre en verdad es mañana, estamos ya casi en agosto.
+
+25:46 - Ljubinka Basic
+  Casi agosto ya.
+
+25:50 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Se nos viene la idea.
+
+25:53 - Julio Espinoza
+  Claro, con API es totalmente otro...
+
+26:03 - Ljubinka Basic
+  ¿Ustedes creen que quizás sería mejor esperar que estuviese listo ese desarrollo para ver de generar esta otra vinculación?
+
+26:14 - Julio Espinoza
+  Yo creo que sí, porque hay muchas otras cosas que las podemos hacer, por ejemplo, con el correo, podríamos hacer varias piezas de software que te lean automáticamente los documentos, y que todo eso te lo lleven acá.  Pero va a ser trabajar de más, porque después con usted la API, todo eso es marcha atrás, y se hace otra cosa.
+
+26:38 - Ljubinka Basic
+  Ah, o sea, funcionaría con el sistema que tienen actual, pero en el momento que ellos hagan el cambio va a dejar de funcionar.
+
+26:45 - Julio Espinoza
+  O sea, no, no, porque ya no, como no podemos acceder al sistema, lo que estaríamos accediendo serían a tus correos, o sea, más que accediendo, tú estarías haciendo drag and drop de los correos, o tú y tu equipo, y meterían información.  Y sacaríamos la mayor... Pero todavía estaría semi-automatizado, porque faltarían las ventas, faltarían después los documentos, cuando qué. Después, una vez que libera el API, todo lo que hicimos de reconocimiento de correo ya queda obsoleto porque la información la sacamos directo desde el API.
+
+27:19 - Ljubinka Basic
+  Y que no sea una coincidencia, sino que sea una manera que yo... Ya, entiendo. Porque hoy día tú podrías ir a tomar ese mail que nos mostraste.
+
+27:27 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Imagínate que te hiciéramos la solución momentánea, tú tomarías el mail, lo arrastraís y lo metís a una cajita y la cajita la toma, lo reconoce todo y te lo pasa automáticamente a este Excel.  Entonces tú no tenés que digitar nada. Y todos los mails que te lleguen, todos los datos que se puedan capturar de ese correo te los va a pasar para acá.  Y claro, te va a ahorrar pega, pero el tema es que después cuando dice Julio te va a llegar el API y como vamos a poder sacar todo desde allá, desde la plataforma allá, como que esto pierde un poco el sentido y como que entre comillas perdería esta...  Esta... Esta... Esta... Ese desarrollo que te hicimos, ¿cachai? Es como esa la situación que estaríamos, ¿cachai? A menos que te sirviera para quizás otras personas que lo pudieran usar, no sé.
+
+28:11 - Ljubinka Basic
+  Hay varias cosas.
+
+28:13 - Julio Espinoza
+  lo cierto, los alemanes serán, pero no les compro octubre. Esas fechas generalmente no funcionan. Entonces yo creo que no salen en octubre.  ¿Tú crees que no va a estar listo en el fondo en esas fechas?
+
+28:28 - Ljubinka Basic
+  Yo creo que no.
+
+28:29 - Julio Espinoza
+  Entonces, yo lo que haría acá, me la jugaría como se pueda, a quien podamos intentar entrar con alguna credencial.  Y después seguir con la credencial, la que sea, de pista. Oye, nosotros no queremos nada más.
+
+28:51 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Lo que podría hacer ahí, lo que podría hacer, Ljub, es pedir una... decir que, oye, necesito un perfil solo de visualización porque tengo...  Una persona que va a ayudarme a revisar, no sé, y que te den un usuario nomás. Y con eso estamos.  Ya, perfecto. Que no pueda ejecutar cosas ni cambios, pero sí pueda mirar. Puede ser que si tengo un asistente, que quiero que se meta, no sé, que visualice, porque me va a ayudar en mi gestión.  Y con esa podríamos hacer las pruebas.
+
+29:24 - Ljubinka Basic
+  Perfecto. Y lo que es el paso a hacer ahora, que podáis pedir a ese usuario.
+
+29:30 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Si te lo dan, buenísimo. Ahí revisamos y vemos si...
+
+29:34 - Ljubinka Basic
+  Pero y ahí no tendríamos problemas después cuando ellos generen su cambio en plataforma, qué sé yo. ¿Se va a mantener esto mismo de que hayan documentos y todo eso?  sea, pues... Lo que va a pasar ahí, Lu, es que vamos a tener que hacer un ajuste.
+
+29:49 - Julio Espinoza
+  Ya. más, un ajuste, porque la lógica va a estar ya diseñada. Lo que vamos tener que ajustar es que estos APIs que digo yo, tienen unas cosas que se llaman endpoint, y los...  Endpoints, lo que te dicen es, la información está estructurada así y tú la puedes llamar de esta manera. Y tú vas y la pines y te la traes.  Así funciona esta cuestión. Entonces yo digo, ah, el root, ojo que el root está en las tablas de asegurado, y en las tablas de asegurado el root se llama el número identificador.  Y eso yo lo saco. Entonces habría que hacer ese proceso después del API, pero eso es rápido, porque generalmente los que hacen bien un sistema hacen algo que se llama la documentación de la API.
+
+30:33 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Como el manual, hacen como el manual de cómo usar la API, ¿cachai? Y con eso...
+
+30:38 - Julio Espinoza
+  Yo esperaría que siendo alemanes, deben ser así. Y este es un paso, un paso lógico del diseño, así que...  Perfecto. Yo lo haría en esas dos tandas. Primero, si lo siento, tratar de conseguirse una cuenta. Y con una cuenta, de verdad, no te lo aseguro al 100, pero nos podemos meter, ahí ya nos podemos meter y podemos por lo menos...  Lo mejor de todo, a pesar que el código nunca lleva ninguna instrucción de ingresar información, pero a pesar de todo, es mucho más seguro que la cuenta sea solo de vista, de visualización.  Perfecto.
+
+31:19 - Ljubinka Basic
+  Oigan, que comentarles una aprehensión que me comunicó mi CEO. Dale. Como para que lo podamos conversar, porque en el fondo, nosotros estamos full, yo les contaba a ustedes, con el tema de tratar de automatizar lo más posible, y para nosotros este es como el punto de partida con ustedes.  Pero queremos que, a medida que vayamos avanzando, también ir generando otro tipo de desarrollos que tienen que ver mucho con también posicionarnos de forma distinta con nuestra competencia.  Y frente a eso, hay obviamente varios desarrollos en los cuales ustedes... Nos podrían ayudar, pero que tendrían un poco así como necesitaríamos que quedara patentado más que en nosotros, porque yo sé que ustedes muchas de las cosas que se dedican a hacer replican después figuras de negocio en otros pares cuando le van vendiendo.  Pero algo que para nosotros es demasiado importante es justamente cuidar, en base a la idea que tenemos por desarrollar en el futuro, que sea algo nuestro y no que después, el día de mañana, la competencia lo tenga, porque es claramente algo que estamos desarrollando nosotros para marcar la diferencia con la competencia.  Entonces una de las cosas que ya me levantó fue como, oye, ojo, porque si generamos este desarrollo, la idea es posicionarnos a nosotros frente a la competencia como alguien que está haciendo esto, pero no me sirve que en el fondo quienes nos ayuden a hacer este desarrollo para marcar la diferencia después vayan a la  Y se lo ofrezcan porque es algo en lo que venimos trabajando años. Entonces, ese es mi tema, que necesitaba levantárselo con usted, no particularmente con esto, porque esto no tiene nada que ver, es algo muy puntual de nosotros, la otra empresa funciona con su sistema interno y distinto, pero sí en lo que nosotros tenemos en mente desarrollar en el futuro.
+
+33:21 - Julio Espinoza
+  Ok, mira, tú vas a decir lo que tú estás pidiendo, poco exigible, para serte bien sincero, a nivel legal, pero por tranquilidad y por transparencia, ahí lo que tenemos que firmar es un acuerdo de exclusividad de, y aquí me gusta ser bien preciso, porque es exclusividad de alguna, no podemos ponerle exclusividad a la metodología ni tampoco a las, ¿cómo se llama?, a las distintas piezas de software o las distintas tecnologías.  Por ejemplo, oye, vamos a leer, por decirte una lecera, vamos a leer. Los correos y los documentos, entonces toda la información la capturamos y la inyectamos a un sistema.  Eso es algo, una habilidad que nosotros tenemos para hacer para cualquier negocio, no desde el de ustedes. Lo que tenemos que definir es qué parte del negocio es lo que no se puede replicar y ningún problema, pues le ponemos una cláusula de no compete y de no, y de exclusividad.
+
+34:26 - Ljubinka Basic
+  Perfecto.
+
+34:29 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Porque lo otro es como una tecnología en sí mismo, ¿cachai? Es como el OCR, lo que lee documento, es como una tecnología que se ocupa de a lo mismo la industria, ¿cachai?  Entonces esa no se podría, no podría caer ahí, pero sí lo que sea exclusivo como exclusivo de tu negocio, por así decirlo.
+
+34:45 - Ljubinka Basic
+  Claro, lo que pasa es que nosotros sabemos que hay cosas que actualmente nadie está haciendo y que la idea nuestra es justamente desarrollarlo, necesitamos el lado de ustedes para poder ejecutarlo y desarrollarlo.  Pero sería algo que marcaría la diferencia en la industria en que nosotros nos movemos, entonces no nos interesa que eso después se vaya para otro lado, ¿sí?  Aparte tenemos toda la data para poderlo construir. No, perfecto.
+
+35:15 - Julio Espinoza
+  Hagamos esa cláusula y le ponemos a ese negocio en particular o a esa solución. Al final eso lo que tenemos es la solución, tenga un nombre propio y que esa solución no se puede replicar ni vender a la competencia.  Yo diría por ahí un pródigo.
+
+35:31 - Ljubinka Basic
+  Sí, estoy 100% de acuerdo.
+
+35:32 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Eso es el modelo. Al final es la solución como el producto creado para ustedes. Ese producto, hacemos la analogía, no sé, te diseñamos una chaqueta, esa chaqueta es solo para ustedes.
+
+35:46 - Julio Espinoza
+  Incluso, Lu, tú cachas que esto es un tema de plata, Incluso, Lu, podemos hacer que un tema de exclusividad, tú defines quién es tu competencia y no trabajamos con ello.  Sí.
+
+36:00 - Ljubinka Basic
+  No, mira, yo no creo que a eso haya apuntado, porque obviamente no es nuestro foco tampoco, pero sí, claro, este desarrollo que en un mundo marcaría una diferencia en la industria, no nos interesaría que después se fuese, que probablemente es un poco lo que decíamos, o sea, existen, después salió la copia de la Coca-Cola, Pepsi, qué sé yo, pero not the same.  Claro, no es la misma receta. ¿Cachai? Un poco eso. O sea, en algún momento alguien va a lograr replicarlo, probablemente lo más cercano, qué sé yo, pero es distinto que quienes nos desarrollen a nosotros vayan con el producto ya armado y lo posicionen en la competencia.  Sí, claro.
+
+36:45 - Julio Espinoza
+  perfecto. Ahí se parece bastante más a una compra de una solución, y que eso está correcto. Entonces, cuando la solución es a vos, papá, y es compra, y que a ustedes, a sus servidores, ustedes son dueños de su...  Gracias. Gracias. Y así que aprovechamos y damos máximo cumplimiento también a la ley de protección de datos personales.
+
+37:08 - Ljubinka Basic
+  Perfecto. Oye, y lo último, me pidieron que les mencionara LANDOC, porque ¿tienen cercanía con eso?
+
+37:25 - Julio Espinoza
+  Eso me estoy mirando, ¿qué significa? ¿LANDOC? LANDOC.
+
+37:30 - Ljubinka Basic
+  Porque en el fondo, uno de los dueños de la empresa, que él es alemán, está como bien cautivo con esto y es una de las tecnologías que le gustaría que implementáramos.  LANDOC. Algo con IA. ¿Cómo se escribe LANDOC? Sí, es una inteligencia artificial que entiendo, mira, yo soy súper ignorante en esto, pero por lo que entiendo y mencionó es como que trabaja con distintas inteligencias.  Artificiales y es capaz, en el fondo, como de restringir la data que tú le brindas.
+
+38:09 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Ah, LangDock, con G de gato, LangDock, ¿o no? Sí, esa es.
+
+38:14 - Julio Espinoza
+  Yo te recomiendo, hay otra forma, hay otra forma, Luz. Este te va cobrar uno por la cara y va a ser algo estándar, seguro.  Seguro ibas a tener que configurarlo, por lo que entiendo tú lo tenías, personal para que hagan eso. Y esto, no me he metido, me he metido a revisar lo se trata, pero aquí lo estoy viendo, Workflow.  Lo que pasa es que son estas soluciones bombásticas que dicen que te solucionan toda la comunicación dentro de tu organización.  Y yo, la verdad, que eso no lo he visto nunca funcionando bien porque es un proceso súper largo. Tenés que conectar todos los puntos.  Lo que sí se puede hacer, y que ya nosotros lo estamos probando, es generar inteligencia artificial cerrada. Perfecto.
+
+38:59 - Ljubinka Basic
+  Es decir,
+
+39:00 - Julio Espinoza
+  Son modelos que no son el modelo de Anthropic ni el de OpenAI, que son los más pro, pero hay modelos bastante ya robustos que tú lo bajas y lo están con tu propio servidor.  Entonces no tiene conexión para afuera, ¿ya? Y al estar conectado con propio servidor, ya viene con modelos de lenguaje, con LLM, viene con varias cosas, como Rodrigo, no es el último, pero además, por ejemplo, se deja una guía propia de FIS, que se alimenta con la información que tú querás y te va a responder en función a esa información, no va a salir.  Es como yo creo que para donde va el mundo, con un independiente de seguridad, las empresas grandes como esta, que es una empresa europea, entonces ya deben estar mirando para allá, le están pasando varias cosas, me pasó lo río con España, las empresas no quieren trabajar con empresas gringas.  Y los españoles están bajando de... De de Google, de todo, porque están peleados y no quieren estar presos a Estados Unidos.  Estados Unidos les da la locura en el Bajón Switch y quedan volados. Entonces están viendo todo de manera que queda robusta cerrada en sus propios tenants, que se van.  Así que le voy a dar una mirada a hablar de tantos porque no lo conocían.
+
+40:21 - Ljubinka Basic
+  De todas maneras existe toda otra solución. Perfecto. Sí, porque en una de esas, obviamente según el feedback que ustedes nos den, porque obviamente ustedes son los expertos, sería quizás una inteligencia que nos gustaría sumar dentro de la empresa, pero obviamente tendríamos que saber bien si ustedes nos pueden guiar en el proceso y si efectivamente va a ser un aporte o no.  El dueño lo pintó como que era realmente una maravilla porque creo que, bueno, el dueño también es dueño en otra empresa en Alemania y en esa empresa que...  Que es gigante, ellos ocupan esta tecnología. Ocupan, Lando, sí.
+
+41:05 - Julio Espinoza
+  Aquí estoy viendo, se ve muy pro, o sea, todo lo que tiene, es como una forma, acá lo presentan como una plataforma para introducir y ir a dentro de las organizaciones.  Así por lo menos lo presentan. Pero le echaron un ojo, porque se ve interesante. Sí, tiene mucha gente.
+
+41:28 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Solo para mirar.
+
+41:31 - Julio Espinoza
+  Mira, tiene siete días gratis. Y, claro, no es tan caro. Cien dólares, cien euros para cinco usuarios. ¿De cuántas personas son ahí, Ljubinka, habías dicho?
+
+41:55 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Eran mil usuarios.
+
+41:57 - Ljubinka Basic
+  Somos tres en total, pero en fondo la... Yo creo que quedaría para ciertas personas a utilizar, ahí tendríamos que evaluarlo bien, porque hay personas que acá, por ejemplo, no sé, trabaja la procuradora, que no necesita acceso, entonces hay varias cosas que, ahí tenemos que determinar bien si vale la pena que todos tengan acceso a un tipo de inteligencia artificial así.  Sí, porque se pueden hacer inteligencia artificial a la medida tuya.
+
+42:30 - Julio Espinoza
+  Yo ahora, por ejemplo, estamos haciendo algo bien chico, pero que es interesante, en donde estamos haciendo como el ultimate panel para dueños y SEO, que tenga poco de operación y detalle, sino que lo que estamos mostrando son tres vistas.  La vista primero de resultados, resultados del negocio, ¿cachai? Otra vista, flujo caja, y otra vista que es de compromisos administrativos, el pago del IVA, ¿cachai?  ¿Qué tal? Entonces, y todo esto lo estamos alimentando con las distintas fuentes que alimentan esto, que por un lado es el Servicio Público Interno, el CRM, y con eso estamos.  Y la gracia es que como tenemos acceso a toda esa información, generamos una IA que está alimentada solo de esa información, porque la idea también es que después vaya el CEO, a los CEOs y a los dueños que les encanta tener la solución en el teléfono, porque andan con sus padres y ahí aprovechan de quebrarse un poco, y ahí lo que pueden hacer efectivamente con esta IA es hablarle.  Entonces, en vez de estar viendo miles de gráficos y tablas, oye, ¿cuál fue el profit de enero en la línea de negocio tanto?  ¿Tanto porcentaje? Ah, ok, listo, gracias. O quiero saber, el cliente tanto, cuánto le vendimos en tal fecha, con qué margen le estamos metiendo a ese, o estamos hoy día a 21 de julio, ¿cómo va a estar la caja para el 25 de agosto?  tú te vas a tener un déficit de 2 millones. ¡Hasta la caja para 20 julio! Y vamos a tener algunos que probablemente tenemos que hacer cobranza.  Entonces, esa visión inicial, que creemos que es la mejor forma de partir, para un dueño, un seo, es maravilloso, y como tú lo veis, con IA Cerrán.  Perfecto. No se ponga más paranoico que su información, que es la más delicada, está en manos de Omenay o de quien sea.  Y ahí lo que les digo a todos, sobre todo a los que cachan poco, es, está bien, tenemos que tener normas de seguridad, porque si no, pena, es el infierno.  Pero hoy día lo que uno tiene que entender y asumir, que toda la información de uno ya está en todos lados.  O si usáis Google, si usáis Gmail, si usáis Microsoft, todos ellos ya tienen esta información. Te prometen de guata que no la van a usar, pero poco probable que no la usen.  Si tienen esa cantidad de información, por lo menos para estadística la deben estar usando.
+
+44:54 - Ljubinka Basic
+  Sí, pues mira, lo que a nosotros más nos complica en realidad es que nosotros... Y con Intervent, que ve todo este tema de loss prevention, somos como, yo diría, la única empresa actualmente del rubro que tiene este nicho, desarrollado de la forma en que nosotros lo desarrollamos, porque muchas agencias de recupero te hablan de la mitigación y la prevención, pero ninguno lo aborda como la estrategia de negocio que tenemos nosotros actualmente.  Entonces, nosotros, obviamente, somos súper recelosos con eso, porque es nuestro caballito de batalla, ¿cachai? Tu diferenciador. Exacto, exacto. Y por lo mismo captamos un público más amplio, que son corredores seguros, compañías seguros, ¿cachai?  Porque obviamente tienen mucho que ver con el tema de la mitigación y la prevención. Entonces, a raíz de lo mismo también es que queremos tener tanto cuidado con todo el uso de información.  ¡Gracias! ¡Gracias! ¿Qué se da? Pues bueno, y también para profesionalizarnos un poco también, porque acá cada uno ocupa la IA que se le canten los huevos en el fondo, y cada uno tiene descarga en su computador cualquiera y lo ocupa a 10, 3 siniestras.
+
+46:14 - Julio Espinoza
+  Y ahí la estáis mandando para afuera, así que eso de una u otra manera la tiene Antropi y la tiene apenas ahí.  Insisto, tú cuando contratas cualquiera de estas IA, tiene un disclaimer así de grande que ellos no van a hacer nada con la información, pero como lo hacen todas las plataformas.  Me parece que es entendible y va encima hoy día, las normas de seguridad se resaltan esto.
+
+46:36 - Ljubinka Basic
+  Ojo, está saliendo información.
+
+46:38 - Julio Espinoza
+  Yo me he metido harto en este tema porque como vamos a estar medio como que nos salpica, pero la ventaja para nosotros no para ti, pero encima a nosotros es que a nosotros no nos pega mucho porque nosotros no son nuestros clientes, son tus clientes.  Entonces, tú eres la que tiene que recordar. Y ahí nosotros tenemos toda una metodología que como hemos mirado harto la ley para poder hacerlo y trabajar de cuenta, poder cumplir y que ustedes cumplan también y se pongan la medallita también de apenas salga la ley, oye, nosotros estamos cumpliendo con la ley de trato de información de protección de datos.  La ley tiene hace cuánto mil. Entonces, bien, bien. A mí me interesa mucho, como hemos hablado también esto, porque está muy interesante, está muy entretenido, porque creo que podemos ser su partner tecnológico en esto.  Entonces, como le digo yo a todos los clientes, pastelerar tus pasteles, que ustedes venganse a recuperar y ser los mejores en eso, que nosotros somos los mejores en tecnología y así se van apoyando en esas tecnologías porque ustedes no tengan que hacer esa regla.  Sí, totalmente.
+
+47:54 - Ljubinka Basic
+  No, y aparte de lo que les comentaba, sea, nosotros, este es nuestro punto de partida, pero hay muchas cosas que queremos.  ...que vienen mucho con el fondo al manejo de información que converse con la inteligencia artificial para dar información que actualmente en el mercado no hay.  Entonces nos posicionaría muy bien y obviamente queremos ir avanzando con eso. Yo voy a tratar de conversar hoy día, bueno, por la diferencia horaria estoy medio al límite, pero de conversar hoy día con nuestro cliente para ver cómo me va con el tema de la credencial y así ver si podemos avanzar rápido con eso.  Lo que sí, antes que se me olvide, le comenté al otro dueño de la empresa respecto al desarrollo y lo que sí no quiere él, esto de que habíamos conversado y que sea como este cuadrito que tenga la opción de irse, ¿se acuerdan que hablamos de las liquidaciones de cobro que hacemos nosotros, que le vamos a enviar a los clientes?  Otro cuadrito con el de las vacaciones, quiere que vayan por aguas separadas porque en el fondo quiere separar totalmente.  Nosotros, como se acuerdan que les comenté que somos, si bien un holding, son empresas totalmente separadas, entonces no quiere que se mezclen aguas, sobre todo porque la participación dentro de las distintas empresas son de sociedades distintas.  Entonces, prefiere que vayan por un lado que sea el tema que estamos desarrollando de esto de la documentación y que tiene que ver con Intervent, y por el otro lado el tema ya de las liquidaciones de facturación que se vayan generando y el tema de las vacaciones.  Como sistemas independientes en el fondo. Exacto, no quiere que se mezclen, y en realidad tiene sentido, porque en el fondo quiere separar totalmente las sociedades y que no se topen.
+
+49:55 - Rodrigo Sauvalle Escobar (humadis.cl)
+  De hecho, perfecto, entonces.
+
+49:59 - Julio Espinoza
+  Eso, eso quería
+
+50:01 - Ljubinka Basic
+  Gracias por su tiempo, espero volver con buenas noticias. A la brevedad posible. Vamos, que te vuelvo.
+
+50:10 - Julio Espinoza
+  Saludos a ese que ya lo escuché alejando. ¿Estás con Enzo en la casa o no? No, no, estoy en la oficina.
+
+50:20 - Ljubinka Basic
+  ¿Usted la voz de Enzo? No, mi oficina tiene problemas seriamente acústicos. Entonces mi oficina con Linda, con la oficina del CEO, y tiene más o menos el tono de voz de Enzo.  Sí, yo también pensé que era Enzo. Un tono bajo, un tono bajo, digamos. Buenísima. Y ahí les cuento cómo me va.
+
+50:48 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Y ahí seguimos avanzando. Súper.
+
+50:51 - Ljubinka Basic
+  Oigan, bueno, si o sí el CEO quiere participar en la meeting que tengamos respecto cuando ustedes nos propongan... En el fondo, la cotización y el demo y todo eso.  Y obviamente ahí para que le muestren lo mejor de ustedes. Eso. Tranquilidad.
+
+51:11 - Julio Espinoza
+  ¿Ya? Ya por Ljub.
+
+51:13 - Ljubinka Basic
+  Eso, un abrazo queridos. Un abrazo. estén bien. Cuídense. tú. Chau, chau.

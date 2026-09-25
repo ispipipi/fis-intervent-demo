@@ -1,6 +1,12 @@
 import { parseHistoryWorkbook } from "./historyImport";
 import { HistoryImportBatch } from "../types/domain";
 
+export const HISTORICAL_BASELINE = {
+  records: 4240,
+  sheets: 39,
+  excludedActiveCases: 1000
+} as const;
+
 export type BundledHistory = {
   batch: HistoryImportBatch;
   sourceFile: File;

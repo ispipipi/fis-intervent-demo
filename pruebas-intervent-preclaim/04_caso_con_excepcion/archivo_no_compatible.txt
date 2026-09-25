@@ -1,0 +1,3 @@
+ARCHIVO DE PRUEBA NO COMPATIBLE
+
+Este archivo existe para validar que el sistema marque una excepción por archivo y continúe procesando el resto de la carpeta.

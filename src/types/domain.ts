@@ -4,6 +4,8 @@ export type CalculationMethodId = "1" | "2" | "3" | "firm";
 
 export type TemplateId = "claim-notice" | "aor" | "harvest" | "loa";
 
+export type TemplateDownloadFormat = "html" | "pdf" | "word";
+
 export type CalculationMethodConfig = {
   id: CalculationMethodId;
   title: string;
@@ -23,7 +25,32 @@ export type TemplateConfig = {
   baseContent: string;
   active: boolean;
   version?: number;
+  officialName?: string;
+  effectiveDate?: string;
+  logoText?: string;
+  headerText?: string;
+  footerText?: string;
+  sender?: string;
+  recipient?: string;
+  legalText?: string;
+  requiredFields?: string[];
+  optionalFields?: string[];
+  manualEditableFields?: string[];
+  lockedFields?: string[];
+  signatureRule?: string;
+  authorizedSigner?: string;
+  downloadFormats?: TemplateDownloadFormat[];
+  requiresSerialNumber?: boolean;
+  requiredAttachments?: string[];
   updatedAt: string;
+};
+
+export type LetterApproval = {
+  templateId: TemplateId;
+  version: number;
+  fingerprint: string;
+  approvedAt: string;
+  approvedBy: string;
 };
 
 export type CaseStatus =
@@ -38,16 +65,20 @@ export type Jurisdiccion = "Hamburgo" | "LaHaya";
 
 export type DischargeDateType = "Real" | "ETA";
 
-export type CurrencyCode = "USD" | "CLP" | "EUR";
+export type CurrencyCode = "USD" | "EUR" | "CLP" | "CNY" | "HKD" | "GBP";
 
 export type DocumentType =
   | "Carta de notificación a la naviera"
   | "AoR"
   | "Carta de subrogación o LoA"
+  | "Carta de asignación de derechos"
   | "BL"
   | "Booking"
   | "Factura de exportación"
+  | "Nota de crédito"
+  | "Correspondencia de notificación"
   | "DUS"
+  | "IVV"
   | "Packing List"
   | "Certificado fitosanitario"
   | "Certificado de origen"
@@ -58,20 +89,39 @@ export type DocumentType =
   | "Reportes de inspección"
   | "Certificado de cosecha"
   | "Registros de termógrafos"
+  | "Certificado de destrucción"
+  | "Factura de destrucción"
   | "Sin clasificar";
+
+export type DocumentStatus =
+  | "disponible"
+  | "faltante"
+  | "solicitado"
+  | "recibido"
+  | "rechazado"
+  | "no aplica"
+  | "ilegible"
+  | "pendiente de revisión";
+
+export type ExtractionStatus = "procesado" | "procesado con OCR" | "parcial" | "no soportado" | "requiere OCR";
 
 export type EventType =
   | "cambio_estado"
   | "caso_actualizado"
   | "documento_cargado"
+  | "documento_solicitado"
   | "documento_eliminado"
   | "calculo_generado"
   | "carta_generada"
+  | "carta_aprobada"
   | "reversion_estado"
   | "analisis_confirmado"
   | "extraccion_revisada"
   | "inspeccion_registrada"
-  | "informe_generado";
+  | "informe_generado"
+  | "alerta_inactividad_enviada"
+  | "alerta_inactividad_leida"
+  | "alerta_inactividad_cerrada";
 
 export type TransferDestination = "FIS" | "Lawgistic";
 
@@ -80,11 +130,24 @@ export type SessionUser = {
   nombre: string;
 };
 
+export type InactivityAlertChannel = "plataforma" | "correo";
+
+export type InactivityAlertState = {
+  estado: "abierta" | "cerrada" | "silenciada";
+  lastHandledAt?: string;
+  readAt?: string;
+  lastPlatformSentAt?: string;
+  lastEmailSentAt?: string;
+};
+
 export type Caso = {
   id: string;
+  codigoCliente?: string;
+  documentStatuses?: Partial<Record<DocumentType, DocumentStatus>>;
   claimHandler: string;
   csClaimNo?: string;
   assured: string;
+  consignee?: string;
   opponent: string;
   vessel: string;
   voyage?: string;
@@ -103,9 +166,11 @@ export type Caso = {
   resumenCaso?: string;
   causaPotencial?: string;
   fuentesCausa?: string[];
+  conflictosExtraccion?: string[];
   propuestaPerdida?: ExtractedLossProposal;
   informeRevision?: ReviewReport;
   estado: CaseStatus;
+  alertaInactividad?: InactivityAlertState;
   ultimaActualizacion: string;
   createdAt: string;
   analisisCausa?: DamageAnalysis;
@@ -113,6 +178,7 @@ export type Caso = {
   fechaInspeccion?: string;
   inspeccionConjunta?: boolean;
   resumenInspeccion?: string;
+  cartasAprobadas?: LetterApproval[];
 };
 
 export type HistoricalCategory = "Preclaim" | "FIS" | "Presentar" | "Traspasado" | "Descartado" | "Histórico";
@@ -127,6 +193,7 @@ export type HistoricalCase = {
   claimHandler?: string;
   csClaimNo?: string;
   assured?: string;
+  consignee?: string;
   opponent?: string;
   vessel?: string;
   voyage?: string;
@@ -189,8 +256,10 @@ export type Documento = {
   originalName?: string;
   pathMock: string;
   disponible: boolean;
+  estadoDocumental?: DocumentStatus;
   fechaCarga: string;
   clasificacionConfianza?: "Alta" | "Media" | "Baja";
+  estadoExtraccion?: ExtractionStatus;
   relativePath?: string;
   textoExtraido?: string;
   datosExtraidos?: ExtractedCaseData;
@@ -201,6 +270,7 @@ export type ExtractedCaseData = {
   referencia?: string;
   csClaimNo?: string;
   assured?: string;
+  consignee?: string;
   opponent?: string;
   vessel?: string;
   voyage?: string;
@@ -216,6 +286,7 @@ export type ExtractedCaseData = {
   causaPotencial?: string;
   fuentesCausa?: string[];
   referenciasDetectadas?: string[];
+  conflictosDetectados?: string[];
   propuestaPerdida?: ExtractedLossProposal;
 };
 
@@ -225,11 +296,17 @@ export type ExtractedLossProposal = {
   tipoCambio?: number;
   tipoCambioFecha?: string;
   tipoCambioFuente?: string;
+  cantidadAfectada?: number;
+  unidadCalculo?: string;
+  metodo1_cantidadReferencia?: number;
   metodo1_liquidacionReal?: number;
   metodo1_liquidacionComparativa?: number;
+  metodo2_cantidadReferencia?: number;
   metodo2_valorReporteMercado?: number;
   metodo2_liquidacionReal?: number;
   metodo3_valorFactura?: number;
+  metodo3_ventaNetaDestino?: number;
+  /** @deprecated Se conserva para leer propuestas antiguas del demo. */
   metodo3_ventaBrutaDestino?: number;
   rubrosAdicionales: RubroAdicional[];
   montoFinalReclamo?: number;
@@ -256,10 +333,18 @@ export type ReviewReport = {
     currency?: CurrencyCode;
     justification?: string;
   };
+  closureChecklist?: ReviewGate[];
   checklist: Array<{
     label: string;
     status: "Disponible" | "Pendiente";
   }>;
+};
+
+export type ReviewGate = {
+  id: string;
+  label: string;
+  status: "Cumplido" | "Pendiente";
+  detail: string;
 };
 
 export type UploadDraft = {
@@ -269,7 +354,7 @@ export type UploadDraft = {
   relativePath?: string;
   textoExtraido?: string;
   datosExtraidos?: ExtractedCaseData;
-  estadoExtraccion?: "procesado" | "procesado con OCR" | "parcial" | "no soportado" | "requiere OCR";
+  estadoExtraccion?: ExtractionStatus;
   ocrUsado?: boolean;
 };
 
@@ -285,13 +370,19 @@ export type CalculoPerdida = {
   tipoCambio?: number;
   tipoCambioFecha?: string;
   tipoCambioFuente?: string;
+  cantidadAfectada?: number;
+  unidadCalculo?: string;
+  metodo1_cantidadReferencia?: number;
   metodo1_liquidacionReal?: number;
   metodo1_liquidacionComparativa?: number;
   metodo1_resultado?: number;
+  metodo2_cantidadReferencia?: number;
   metodo2_valorReporteMercado?: number;
   metodo2_liquidacionReal?: number;
   metodo2_resultado?: number;
   metodo3_valorFactura?: number;
+  metodo3_ventaNetaDestino?: number;
+  /** @deprecated Se conserva para leer cálculos antiguos del demo. */
   metodo3_ventaBrutaDestino?: number;
   metodo3_resultado?: number;
   rubrosAdicionales: RubroAdicional[];
@@ -299,6 +390,7 @@ export type CalculoPerdida = {
   notaCreditoValor?: number;
   metodoSeleccionado?: "1" | "2" | "3";
   justificacionSeleccion?: string;
+  resultadoSeleccionadoFirmado?: number;
   montoFinalReclamo?: number;
   fuentes?: string[];
   updatedAt: string;
@@ -326,9 +418,11 @@ export type DamageAnalysis = {
 
 export type NewCaseInput = {
   id?: string;
+  codigoCliente?: string;
   claimHandler: string;
   csClaimNo?: string;
   assured?: string;
+  consignee?: string;
   opponent?: string;
   vessel?: string;
   voyage?: string;

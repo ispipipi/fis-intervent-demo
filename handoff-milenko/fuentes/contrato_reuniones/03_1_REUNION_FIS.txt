@@ -1,0 +1,267 @@
+TRANSCRIPCIÓN COMPLETA REUNIÓN FIS 10 DE JULIO 2026
+
+---
+
+0:00 - Ljubinka Basic
+  Sí, chiquitito, chiquitito. Bueno, para contextualizarlos un poco, nosotros somos una empresa, que se dedica, lo que se denomina en el rubro, un agente de recupero, ¿ya?  Tenemos tres partes del servicio que son como microempresas dentro, que se digan como en departamentos, por decirlo de alguna forma, y se divide en etapas el servicio dentro de cada una de estas empresas.  Perfecto. Entonces el servicio parte con Intervent, que es una gran empresa en la cual... Yo soy socia y que está bajo mi tutela y es donde yo quiero que se haga la mayor intervención respecto al proyecto que podamos hacer en conjunto.  Hay mucha pega acá que es, yo le comentaba a Rodrigo, que es muy manual y que yo creo que se puede hacer mucho para automatizar y facilitar la pega para la gente que el día de hoy la está viendo y que además, como nosotros estamos proyectando la empresa, para en el fondo no tener la necesidad de estar invirtiendo en contratar más gente, sino que mantener en el fondo a la gente y seguir creciendo.  Esa empresa lo que hace es recibir casos ya sea de exportadores, importadores o compañías de seguro o corredores de seguro por siniestros, en el caso de los seguros que hayan indemnizado, en el caso de los exportadores e importadores que no hayan querido siniestrar su póliza o que no tenían asegurada su carga, pero eso es lo menos caso.  Y por ende van con nosotros cuando, durante el transporte de las mercancías, el transportista, debido a una negligencia, generó un daño en esas mercancías.  Entonces nosotros, a través de Intervent, podemos hacer dos... Intervent se divide en dos servicios, el fondo. El de actuar tempranamente durante...  ¿Me quieres interrumpir? Dime, Julio. Sí. Una pregunta antes que parta con esa parte.
+
+2:31 - Julio (Unverified)
+  Entendiendo que lo gatillante son que de alguna de estas tres fuentes te llegan estos casos. Casos, Entendiendo, Si se tratan como el mundo no seguro, sería un caso.  Y ese caso, ¿por qué día te llega? ¿Cuál es el canal? ¿Cómo tú te enteras de ese caso? ¿Tienen un sistema?  ¿Te llega por correo? ¿Te lo avisan por WhatsApp?
+
+2:50 - Ljubinka Basic
+  No sé. Mira, nuestro principal cliente es un seguro alemán. Entonces yo te podría decir que el 90% de los casos, porque este seguro alemán es el seguro que ve el 60%...  Y nosotros, no solamente a ellos les vemos Chile, sino que les vemos worldwide. Entonces nos llega, como en el 60% de los siniestros de fruta chilena, más otras partes del mundo.  Y con ellos, en particular, considerando la carga y todo, trabajamos con una plataforma que es de ellos, a pesar de que se llama Fizz, que es el nombre de nuestra empresa.  La plataforma es de ellos. Ellos, de hecho, trabajan con sus clientes, con sus asegurados, a través de esa plataforma.  Los inspectores de carga, que son quienes inspeccionan cuando sucede un siniestro, también tienen acceso a esta plataforma. Los corredores de seguro con los que ellos trabajan también tienen acceso a esta plataforma.  Y nosotros, como agencia de recupero, también tenemos acceso a esta plataforma. Entonces, la plataforma, yo te diría... Es bastante básica.  Tiene, yo creo que fácil, 7, 8, si es que no son 10 años. Y ahora están ellos generando con una empresa allá en Alemania la actualización de la plataforma y por ende nosotros hemos sido bastante partícipes en pro de que cualquier mejora que nosotros hagamos pueda conversar con esta nueva plataforma de una forma más amigable de la que es actual porque es muy básica.  Y nos genera en el fondo muchas problemáticas en nuestro día a día. Esta plataforma cuando ellos, en el fondo cada vez que tienen un siniestro que es indemnizado y que por tal necesitan que nosotros analicemos el caso, ellos activan con un botoncito que pase el caso a recupero y por ende nos llega a través de un correo una notificación de necesitamos que analicen este caso.
+
+5:04 - Julio (Unverified)
+  Perfecto, pero solo te llega la notificación, tú tienes que meterte sí o sí al sistema para poder sacar toda la info que vaya a necesitar.  Exacto, y esa es parte de lo que yo necesito que me ayude.
+
+5:17 - Ljubinka Basic
+  Pero solamente con esta compañía de seguro, que es, como te decía, el 90% de nuestro volumen, es a través de este sistema.  Nos llega este correo, esta notificación, y yo tengo una persona que de forma manual se tiene que meter a la plataforma, la plataforma es súper poco amigable, entonces tú tienes que descargar uno a uno los documentos, no existe en el fondo un botón que tú apretes y te baje una carpeta completa con los documentos, sino que tiene que ir uno a uno.  La persona tiene que revisar uno a uno estos documentos y generar una carpeta con la denominación que nosotros le asignamos al caso y ir cambiando los nombres manualmente de cada uno de los documentos.  Estos documentos son súper estándar. Esos documentos
+
+6:03 - Julio (Unverified)
+  ¿La definición que ustedes le asignan al caso viene de alguna lógica? ¿Ustedes tienen una base de datos con los casos, con números correlativos?  Sí, o sea, manejamos un Excel.
+
+6:14 - Ljubinka Basic
+  Sí. Un Excel súper básico, súper manual.
+
+6:18 - Julio (Unverified)
+  Están igual, hasta el que se den de que es más tecnológico, están igual, todos tienen su Excel por al lado.
+
+6:23 - Ljubinka Basic
+  Sí. Nuestro Excel, que de hecho se presta para muchos errores, porque basta que un dedito humano apriete la fila y desaparece el caso.  Entonces, para mí es medio terrorífico este Excel. Y bueno, sigue la lógica de que todos nuestros casos, cuando recién llegan, como el área al que llegan, se llama Preclaim.  Vienen con un PRI, un guión. Después viene FIS, que es el nombre de la empresa. Después viene la Navier.  A ver, déjame ver un caso porque no me acuerdo de memoria. Pero después viene claro. Claro, el nombre del transportista contra el quién se va a repetir, quién vendría a ser el oponente.  Nosotros siempre ponemos tres siglas, no el nombre completo. Después, el año en el cual se nos asignó el caso.  En el fondo que nos llegó la notificación para que nosotros manejáramos el caso. Después viene el mes, el año en el cual prescribe ese caso.  Y después recién viene el número de caso de ingreso hacia nosotros.
+
+7:34 - Julio (Unverified)
+  Está muy bueno, está muy bueno, está muy bueno porque está codificado, entonces está excelente para todo lo que, para el orden que tú querías hacer.  Así que sí, sí o no, era esa mi duda.
+
+7:44 - Ljubinka Basic
+  Perfecto. Espera, la última duda antes de.
+
+7:48 - Julio (Unverified)
+  Relación con los dueños del sistema este, FIS, no hay ninguna como para preguntar si es que ellos tienen, por ejemplo, algo bien técnico que se llama si tienen API.  Pues eso tengo.
+
+8:03 - Ljubinka Basic
+  No lo sé, podría escribirle y preguntarles, pero como te decía, igual va a cambiar esta plataforma. Entonces tendría que quizás preguntarle.  Pero debería conectarse después a la otra API.
+
+8:14 - Julio (Unverified)
+  Así va, en términos sumergió, API es como una llavecita que te permite conectar a los datos sin tener que pasar por la interfaz.  Entonces te permite conectar dos sistemas en su propio idioma. Entonces así tú no tienes que estar viendo y es mucho más rápido.  Hay otras soluciones en caso de que no se pueda. Pero esta es la más fácil, por eso te la pregunto.  Ya, lo anoté para consultarlo porque soy súper ignorante en el tema y la verdad lo desconecto.
+
+8:40 - Ljubinka Basic
+  O si querés, nosotros te mandamos la consulta. mandamos el texto. Eso, para que te lo mandí. Maravilloso. Bueno, entonces esta persona empieza a armar esta carpetita en base a los documentos que están en la plataforma disponibles, en base a esos documentos y a información que figura en la plataforma, porque esta plataforma, el caso en sí, lo crea.  En la plataforma, no el seguro, sino que el inspector, quien fue y revisó la mercancía, cuando el exportador o importador, quien haya sido asegurado, haya notificado el siniestro.  ¿Y esto está vivo?
+
+9:17 - Julio (Unverified)
+  Esta ficha del caso, en este caso, ¿está viva? O sea, se van pasando cosas y se va agregando más información.  Sí. ¿Después de que tú la tomás?
+
+9:28 - Ljubinka Basic
+  Sí, porque de hecho nosotros una de las cosas que hay cosas que en sí no se modifican muy asiduamente, pero sí, por ejemplo, la parte, esta tiene varias pestañitas, y la parte de documentación, nosotros le brindamos el servicio a la compañía de seguro de recopilar los antecedentes necesarios para efectuar el recupero contra el transportista.  Entonces, justamente la etapa de PRI, lo que hace es cuando le llega el caso, es ver la documentación que está disponible, analizar los méritos del caso.  En base a eso, si es que efectivamente hay méritos para ir contra el transportista, verifica qué documentación es necesaria y está faltando para hacer el recupero, lo tipea de forma manual.  Dime.
+
+10:18 - Julio (Unverified)
+  En la parte de analizas el caso y ves, como tú dijiste algo, ves si es que tiene mérito. Eso es criterio o son reglas de negocio.  ¿Se puede escribir esa regla o es necesario que una persona lo haga?
+
+10:34 - Ljubinka Basic
+  Mira, para mí, yo te diría que es muy difícil automatizar eso porque probablemente tendría que ser más blanco y  y en esto hay muchos matices.
+
+10:49 - Julio (Unverified)
+  Pero yo te digo como para, no para definirlo, sino que para ayudar. decir, el análisis del mérito ya te sale como una propuesta para que tú veas, oye, este me lo tiro sí, sí, no, no, sí, sí, y por esto.
+
+11:03 - Ljubinka Basic
+  Sí, de hecho, mira, hay celdas que tiene esta plataforma en donde el inspector puede indicar la causa del daño.  Y cada vez que es súper claro, el inspector lo indica. Y es súper fácil para nosotros, en el fondo, ah, ya, perfecto, el problema fue de temperatura, entonces el caso fue de temperatura, ¿cachai?  Y ahí la persona que recibió el caso ve si es que están disponibles los termógrafos del contenedor y revisa los termógrafos y dice, ah, sí, efectivamente, no sé, pues tuvo tres grados por sobre los seteados y requerido en el VL, entonces pone el detalle de tres grados sobre, qué sé yo.  Y eso queda registrado.
+
+11:45 - Julio (Unverified)
+  Una regla como esa es fácil automatizarla, que no se aplica a criterio, es, hay mediciones y está por arriba de un criterio que está definido.  O a lo que me preocuparía es, lo siento, una lecera, el auto quedó color blanco o color blanco, blanco invierno o blanco, no tenía ni idea, ¿cachai?  O cumple, o algo que sea solamente criterio que no se puede escribir. Porque si no, en este caso, tú crees que las herramientas modernas te ayudan 99%.  O sea, te pueden dejar la cuestión masticadísima para que realmente este tiempo que están usando tu agente o tu ejecutivo sea el menos.  Vayan casi que revisando. Claro.
+
+12:25 - Ljubinka Basic
+  Esa es mi idea, en el fondo, que logre la persona solo revisar. Claro. Corroborar la información, nada más. Bueno, lo que te decía en el fondo, que en esto hay muchos matices, porque de repente nosotros igual nos quedamos con casos que no necesariamente tienen mucho mérito, pero tenemos otro aspecto en consideración, como, oye, no, este transportista es súper amigable, y si nos acercamos igual puede que cerremos en algo, ¿cachai?  Entonces, ¿cómo es el tipo de cosas? No, agrega mucho valor ejecutivo, así que esa parte no es bueno automatizar.  Bueno, eso hace el análisis y dentro. Dentro del análisis ve qué documentación falta para respaldar el caso ante el transportista y deja el registro en este Excel de la documentación que se tiene que solicitar al asegurado.  Si está disponible para generar el cálculo de la pérdida, genera el cálculo de pérdida, que eso es otra cosa que a me gustaría automatizar.  ¿Y qué significa si está disponible? Porque puede que el seguro muchas veces indemniza casos con menos documentación de la que se necesita para después perseguir la responsabilidad del transportista.  Entonces, a veces cuando nos llega el caso no necesariamente está la documentación que nosotros necesitamos para hacer el cálculo de la pérdida, qué se requiere contra el transportista, porque muchas veces el seguro paga bajo valor factura, pero nosotros no funcionamos así.  Nosotros tenemos tres formas. ¿Eso tenés claro qué es que necesitáis?
+
+13:58 - Julio (Unverified)
+  Exacto.
+
+13:58 - Ljubinka Basic
+  Lo que pasa es que para automatizar esto yo necesitaría que en el En fondo, esta automatización generara, yo la educara con tres formas distintas que tengo siempre de generar el cálculo.  Porque yo hago el ejercicio de estas tres formas y me quedo con el que más me conviene.
+
+14:19 - Julio (Unverified)
+  Bueno, yo me lo imagino así, de tal, tú estás haciendo el cálculo y que ya te tiene los tres escenarios de inmediato, siempre.  Tú decís, ah, escenario uno, escenario tres, sí.
+
+14:30 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Es el fin, Maravilloso, maravilloso.
+
+14:33 - Ljubinka Basic
+  ¿Cachai? Y ya. Bueno, entonces la persona, si es que tiene la documentación que necesita para hacer el cálculo, hace el cálculo bajo estos tres criterios y se queda con el que en el fondo más nos beneficia.  Y luego ya con eso solicita la documentación que faltaría para completar el caso. Y cuando la documentación está completa, se traspasa ya a otro de los departamentos, que son estas otras dos subempresas, que por un lado es FIS, que ve los reclamos de forma extrajudicial.  ¡Gracias! ¡Gracias! ¡Gracias! ¡Gracias! Con el transportista. Y por el otro lado es Logistic, que ve todo lo que es recupero, pero ya de forma judicial.
+
+15:12 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Julio, los criterios esos de cálculo, esos tres criterios, ¿en se basan? O sea, el cálculo uno toma qué cosa, el dos y el tres.
+
+15:22 - Ljubinka Basic
+  Mira, el cálculo uno, y que es el que nosotros más utilizamos, es en base a la liquidación del embarque versus una liquidación comparativa que nos pueda facilitar el exportador de un embarque gemelo, que en el fondo tenga, por ejemplo, estoy pensando en cerezas, que sean la misma variedad de cerezas, mismo calibre de cerezas, que tengan el mismo destino y hayan arribado en una fecha similar a ese.  Para nosotros esas características tienen que cumplir por hacer un embarque gemelo. Perfecto. Y nosotros usamos ese embarque gemelo como lo que se denomina un Show Market Value.  Y hacemos el juego de decir, oye, señor transportista, si no hubiese existido esta negligencia, el contenedor se hubiese vendido en esto versus que se vendió en esto.  Entonces, tomamos el del South Market Value, menos la liquidación y reclamamos el diferencial. La otra forma es a través de un reporte de mercado que existiera.  Por ejemplo, Estados Unidos tiene uno de la USDA, que está público en su página, pero son informes de mercado que tienden a tener valores un poco más bajos que una liquidación comparativa.  Porque, ponte tú, las liquidaciones comparativas, la mayoría de las exportaciones de fruta que salen de acá de Chile, que yo te diría que la mayor cantidad de casos que nosotros vemos es fruta, no van hacia, no sé, por La Vega, ¿cachai?, acá en Chile, en La Vega, en Rotterdam, sino que van a un jumbo en Rotterdam, ¿cachai?  Entonces, ¡Gracias! ¡Gracias! Entonces, ese reporte de mercado del lugar a mí me va a dar los valores de la vega de Rotterdam, no del Jumbo.  Entonces van a ser valores más bajos. Pero igual te sirven como referencia. Sí, pues yo lo uso cuando el cliente no es capaz de proveerme de una liquidación comparativa porque pasa, que no tienen, porque dicen, pucha, no, yo tengo recién mi siguiente nave con embarque.  Venía dos semanas después, dos semanas después, ningún transportista te va a considerar el valor porque el mercado de las frutas es súper dinámico.  Tú recurres al cálculo 2. Cuando no tenías esto, recurrís a este. Exacto. Recurro al segundo que me da el Sound Market Value de, ponte tú, en Estados Unidos la USDA, o en Europa hay otros que son más privados, como FreshTech, etc.  Ocupamos esos. Perfecto. Ya cuando, con esos, hay veces que no existe pérdida. Si tú decís, chuta, no existe pérdida, recurres a la tercera forma, que sería utilizar el valor factura de la carga, considerándolo con la venta, la liquidación de la venta, pero ya no de forma bruta, porque nosotros consideramos el bruto de la liquidación cuando es bajo liquidación comparativa o estos reportes de mercado, sino que usamos factura de exportación versus la venta bruta en destino.  Y eso sería. O hay casos que son los menos, porque generalmente la fruta se vende a libre consignación, pero hay algunas que se venden a firme en mercados que son más complejos, como Indonesia, Turquía, donde pueden como esta forma.  Y esos van a precios fijos y ahí solamente no hay que hacer todo este ejercicio, sino que es una nota de crédito que están mandando el valor de la factura y nada.  Perfecto. Perfecto.
+
+19:03 - Julio (Unverified)
+  Ya. Pero es súper estandarizado, ¿cachai?
+
+19:07 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Perfecto. ¿Y ese es todo el ciclo?
+
+19:10 - Ljubinka Basic
+  Ese es todo el ciclo desde Preclaim, que es como la parte que yo les he comentado a ustedes, que siento que es lo más automatizable, porque ahora todo esto se hace manual.  En el fondo, para mí, mi sueño es que se pudiese descargar la información que está en esta plataforma con un solo clic, que era lo que estaba pidiéndole a ellos con esta remodelación que están haciendo, que se descargara todo automáticamente y solamente esta persona pusiera nuestra referencia en la carpeta, y ya desde lo que pudiésemos hacer nosotros, fuese esta carpeta, se metiese, se procesara, no sé, en algún sistema y te dijera enseguida, oye, estas son la potencial causa de daño o la causa del siniestro, estos son los documentos que tienes disponibles, estos son los que te faltan considerando el tipo de daño para repetir.  Contra este tercero y que me pudiese automatizar los cálculos. dijera, oye, con esta forma te sale tanto, con esta forma tanto, con esta forma tanto.  Y ahí yo poder decir, ya con este me quedo, con estos documentos voy a solicitar, qué sé yo. Muchas gracias.  Te tengo buenas noticias.
+
+20:25 - Julio (Unverified)
+  Yo creo que somos bien expertos en hacer lo que tú estás pidiendo y dentro de todo lo que me has contado no veo nada no factible.  Lo único que necesitaríamos, de tu parte, porque fuiste súper detallista, te lo agradezco un montón. Generalmente no tenemos este tipo de reuniones.  Generalmente una nebulosa y tenemos que inventar. Entonces aquí acabamos súper al callo.
+
+20:47 - Ljubinka Basic
+  Está maravilloso.
+
+20:50 - Julio (Unverified)
+  ¿Podríamos contar con algún tipo de registro que tú estés usando, aunque sean los anonimices, en caso que necesites? Pero por ejemplo, el Excel que hoy día tú usas, el tipo de archivos que son los que están en esta...  ¿Un caso entero? Anonimizado si quiere, me lo pase. Perfecto. Para poder hacer pruebas y ver que el sistema funcione bien, porque nuestra idea, sé si te contó Rodrigo, pero trabajamos de una manera bien sui-generic, que es, nosotros nos juntamos hoy día y probablemente de aquí al próximo viernes ya tengamos un demo bastante funcional de lo que nosotros entendimos que es tu negocio y lo que necesitáis.  Entonces, así para no venderte humo, sino que decir, mira, a esto estamos apuntando y si llegamos a acuerdos de las funcionalidades, después nosotros lo único que nos queda es llegar a acuerdos en precio y empezar a ajustar esto nomás, que es muy poquito, el paso siguiente es muy poquito.  Entonces, es bien entretenido este proceso y de nuevo te agradezco, porque de verdad hace rato no me topaba con un cliente que conociera tan bien su proceso.  Es que fuiste, claro, tenías el muchos años en esto ya.
+
+21:58 - Ljubinka Basic
+  Perfecto.
+
+21:59 - Julio (Unverified)
+  Esta es generalmente mi reunión después de adjudicado. Es como para levantar el proceso, pero acá lo levanté casi completo.  Maravilloso, maravilloso. Bacán.
+
+22:10 - Ljubinka Basic
+  Oigan, pero esta es la parte que me concierne a mí, que quiero, pero hay otros puntos que en el fondo tengo que planteárselos porque son de hecho de relevancia del CEO y necesitaba también que forma parte de la cotización que se genere.  Yo la verdad no lo conversé con Rodrigo, entonces no sé si ustedes hacen esto, pero es algo que yo le comentaba a Rodri que nosotros hicimos ya una cotización con otra empresa que nos estaba cotizando como parte de esto y justamente estos otros puntos que se los voy a comentar.  Una de las cosas es gestionar la contratación de una inteligencia artificial con la que pudiésemos trabajar nosotros e incorporarla en la empresa, porque actualmente no tenemos una inteligencia artificial como formal en la empresa con la que trabajemos y la idea es como profesión.  ¿Qué es lo que se dice? Contemplaba varias inteligencias artíficas.
+
+23:38 - Julio (Unverified)
+  Pero mira, te voy respondiendo. Aquí lo bueno es que somos dos empresas y que funcionamos además como una, entonces tenemos varios servicios adentro que podemos estar mezclados.  Yo lo veo ahí más por el lado tuyo, Rodrigo, por el lado de asesoría, que yo te puedo ayudar a toda la parte técnica, y además Rodrigo tiene la gracia que tienen los productos para meter la inteligencia artificial en los procesos.  Finalmente, yo te diría que ahí es donde está el valor, más que elegir, porque si me preguntás cuál elegir, yo te diría, no sé, estoy entre un Lamborghini, un Ferrari, porque estáis hablando de puras cuestiones que son maravillosas, de verdad, lo que hacen es maravilloso.  Lo es importante es saber bien el uso que ustedes van a dar y después el poder darle herramientas de gestión para que puedan usarlo esto de buena manera, porque, de nuevo, las IA son herramientas mal utilizadas, no vas a ser más que una máquina de escribir, un Google reforzado, pero si tú le das el conocimiento, que Rodrigo tiene esas capacitaciones en donde transmite esto, si tú le das ese conocimiento, realmente a una persona la multiplicáis por 4 o por 5.  Es impresionante cómo agarra un rendimiento. Entonces, a tu pregunta, ¿me doy la vuelta larga? Sí, sí lo hacen. Perfecto.  Entonces, eso, porfa, también, si es que lo pudiesen como incluir dentro de la cotización.
+
+25:00 - Ljubinka Basic
+  Y otro punto es el de seguridad. Nosotros estamos ahora tratando de captar muchos nuevos clientes y eso se está concretando como bastante en el corto plazo.  De hecho, hicimos todo un tema de compliance porque como trabajamos con seguros, el tema compliance es como súper relevante.  Y una de las cosas obviamente con compliance que estamos súper al debe es el tema de seguridad interna en los equipos.  Nosotros tenemos algunos días como beneficio de la empresa en los que se hace home office. Entonces, sobre todo ahí perdemos mucho control respecto a la información que está dentro del computador de cada uno.  Nosotros trabajamos con OneDrive. Entonces pueden acceder a todo finalmente y descargar la información, qué sé yo. Entonces necesitamos también como cumplir con ese punto de seguridad que estamos.  Mira, yo me acuerdo, yo vengo de una empresa de MSC, que es una naviera, y ahí no podía ir.  Sí, ahí trabajé siete años, ¿cachai? Entonces ahí no podía ni siquiera meter un pendrive en el computador, nada, estaba como todo bloqueado, ya nosotros acabamos de poner, bueno, no sé, todo, ¿cachai?  No pasa nada.
+
+26:20 - Julio (Unverified)
+  Entonces ahí yo tengo preguntas, porque depende cuál es el objetivo. Hoy día ustedes se rigen supongo que por las normas chilenas y las normas europeas y de todos lados, ¿cierto?  Sí, tú dices de seguridad. Sí, pero lo que pasa es que de aquí a diciembre se empieza a regir la ley de protección de datos.  Ya. Que es súper desgraciada en cuanto a la categoría de multa que tú pudiste tener por filtración de información.  Y dependiendo de la industria le pega más fuerte. Y para poder cumplir con esa ley hay toda una secuencia de cosas que se puede hacer donde nosotros perfectamente podemos hacer la asesoría y...  Y... Y llevarte de la mano en lo que se pueda cumplir, pero hay distintos niveles de seguridad, por eso te preguntaba, porque si tú estás con los niveles de Europa, que son la GLRDP, es más exigente que la chilena.  Y después ya tenís también la ISO 27001, que tiene que ver con ciberseguridad. Es un mundo bien grandote el de la seguridad.  Hoy día si tú te preguntás, claro, estáis con un auto sin seguro. Así estáis corriendo hoy día, probablemente tenís los otros seguros.  Porque eso es lo de responsabilidad, así, y bla, bla, bla, que también te cubre estos siniestros. O aquí es más que nada el nivel de fiscalización que puedes tener, donde hoy día están todas las empresas correctas.  Y como te digo, yo lo que haría con ustedes, primero, es una primera asesoría, asesoría corta, y ahí veamos con Rodrigo, incluso podría ser una asesoría que viniera como parte del servicio, en caso de que se contraten los otros.  Nosotros le agregamos esta asesoría y lo tendríamos que entrevistar un poco. Y de ahí vemos ya el siguiente paso que es si es que van con nosotros a implementar las cosas que tengan que hacer o no.  Yo lo veo así. Yo creo que esa es como la mejor manera de presentarme. Perfecto.
+
+28:26 - Ljubinka Basic
+  Y ahí existiría la posibilidad que ustedes dejarle el nexo con la persona que nos hizo el levantamiento y el estudio de compliance justamente para ver en qué aspectos del tema de seguridad tenemos que abarcar correctamente.  Porque en el fondo nosotros dentro de los requerimientos obviamente de nuestros nuevos clientes está el tema compliance fijo. Y mientras no cumplamos eso no podemos entrar como proveedor.  Perfecto.
+
+28:56 - Julio (Unverified)
+  Si tú tenías esos compliance o esa norma de compliance, maravilloso. Sí, nosotros ya lo tenemos porque ya hicimos...
+
+29:04 - Ljubinka Basic
+  Este levantamiento con una persona. Así que sería genial después poderlo hacer conversar.
+
+29:10 - Julio (Unverified)
+  Que nos pase lo que te viene y partimos desde ahí. Perfecto.
+
+29:14 - Ljubinka Basic
+  Ya, y me quedan otros temas administrativos que también me los encargo ya. Uno es automatizar el tema de certificado de vacaciones.  Nosotros no tenemos a una persona propiamente tal como gerente de recursos humanos, sino que yo en mucho tiempo hice como la labor de gerente de recursos humanos, pero a raíz de que ya estoy con tres gerencias, fue como necesito sacarme esto.  Y eso quedó un poco de la mano del otro gerente que es de Logistic, que ve la parte judicial.  Pero también, o sea, es súper manual actualmente el certificado de vacaciones y la idea es que sea como apretar un plan particular.  Son 13 personas en total. 13 personas. ¿Y hoy día cómo les pagan la remuneración a ellos?
+
+29:59 - Julio (Unverified)
+  ¿Sobre qué plataforma o cómo se No, eso lo tenemos externalizado con un...
+
+30:04 - Ljubinka Basic
+  Un contador.
+
+30:06 - Julio (Unverified)
+  Ah, ya, y el contador, claro, no te ve vacaciones, no ve nada de eso. No, no, porque es externo, eh.  Ah, sí, también, también lo podemos hacer, hacer un sistemita chico donde las solicitudes se hagan por ahí, los trabajadores hagan las solicitudes, entre en el workflow de aprobación, y que todo esto tenga un saldo de vacaciones, y se vaya sumando conforme a la ley, y se vaya descontando conforme al consumo.
+
+30:30 - Ljubinka Basic
+  Perfecto. Muy fácil, sí. Para que porfa también me lo consideren como dentro de los puntitos.
+
+30:37 - Julio (Unverified)
+  Esos son los quick wins, que son rapiditos y podemos entrar rápido con eso, sí. Ya, maravilloso.
+
+30:42 - Ljubinka Basic
+  Y el último punto es, nosotros cada vez que metimos una factura de servicios, en el fondo la factura se emite cuando ya nosotros generamos el recupero contra este tercero, porque nosotros cobramos lo que se denomina en el rubro como no cure, no pay.  En el fondo, si nosotros no recuperamos, no generamos code. Entonces, una vez que ya negociamos el caso con el transportista y cerramos el monto del recupero, ahí recién nosotros generamos la factura de nuestros servicios, proporcionar el porcentaje al monto recuperado.  ¿Y qué nos pasa habitualmente? Se le manda la factura al cliente y el cliente dice, bueno, no entiendo nada, ¿por qué me estás cobrando este monto?  ¿Cachai? Entonces ahí uno tiene que empezar como a explicar y hemos armado como un tipo liquidación, ¿cachai? Manual de decir, ya este caso se manejó porque los porcentajes son distintos y se maneja por FIS o por Logistics, porque extrajudicialmente no incurre en ningún gasto, pero judicialmente incurre en notificaciones, le paga ahí al juez árbitro, ¿cachai?  son varios costos asociados y por ende, todos esos costos se tienen que disminuir del monto que recupera. Y eso va distinto a nuestro FI que un 20% para los casos que son judiciales y un 15% para los ex.  Ok. El descuento de nuestro honorario, el 15%, 20%, y bueno, algo que ahí se le suma que está dentro de las facturas es la tasa de cambio que se utilizó porque la mayoría de estos casos se cierran en dólares y en el caso de los clientes acá en Chile se les factura en pesos para los clientes extranjeros como la aseguradora alemana se factura como factura de exportación en dólares, no tiene IVA, los de Chile tienen IVA.  Ok.
+
+33:05 - Julio (Unverified)
+  Ni un problema, si la data está, hacemos otro módulo. Yo aquí me estoy imaginando una pequeña plataforma que sirva para la empresa, ¿cómo se llama la empresa?  Fis. Fis. Que sirva para la empresa Fis, que tenga por mientras, pensando que después para tener más módulos, pero pensando que primero tendría el módulo del tuyo, que es el, ¿cómo se llama la primera parte que vimos?
+
+33:30 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Intervent. De Intervent, sí.
+
+33:34 - Julio (Unverified)
+  Intervent, recursos humanos, y dentro de los recursos humanos por ahora vamos a tener las vacaciones, gestión de vacaciones, y hacemos esta otra que sea de facturación o liquidación de facturación.  Perfecto.
+
+33:48 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Incluso podría tener hasta un pequeño relato, como la idea la explica, que no entienden de qué se trata, podría tener un breve relato de esto, esto, esto, esto, y cada cosa explicada con un breve relato para que entiendan el proceso.  ¿O qué es lo que le están cobrando, en fondo?
+
+34:03 - Ljubinka Basic
+  Sí, Exacto, porque en el fondo, mira, de hecho ayer yo tuve que mandar muchos correos de forma manual a los clientes porque ahora yo le pedí a Jan como por favor no envíen la factura sin que antes les enviamos la factura junto con la explicación, porque si no sabemos que van a volver con eso.  En el fondo de a poco estamos como profesionalizando esto, ¿cachai? Porque obviamente ahora aumentando a los clientes, con el seguro no tenemos ese problema porque el seguro ya llevamos 10 años trabajando con ellos, entonces no les mandamos ninguna liquidación, ellos saben cuándo es 20%, 10% y chao.  Pero con los que tenemos mucho este problema es con los clientes directos, en el fondo que son exportadoras o importadoras, que sí les importa cada peso que figura, ¿cachai?  Ahí, entonces ahí tienen que tener como, bueno, es factura, se le agrega el IVA, ¿cachai? ¿Sabes qué? Yo haría algo así parecido como a la nueva cuenta.
+
+35:04 - Julio (Unverified)
+  La clásica es que entiende tu cuenta. Y cada concepto está explicado de alguna manera. Claro. Claro.
+
+35:11 - Ljubinka Basic
+  Yo digo que nosotros tenemos una liquidación que hemos armado para algunos clientes, porque algunos clientes nos han pedido algo un poco más formal, no el correo estándar que yo he estado mandándoles, sino que algo más formal porque muchos exportadores trabajan con productores, que son personas distintas a ellos, y obviamente todos los saldos tienen que dividirse con esos productores y ellos tienen que respaldar por qué les está llegando menos lucas.  Entonces ahí nos han pedido documentos un poco más formales. Entonces yo tengo una liquidación tipo que les podría compartir.  También suma un montón eso.
+
+35:50 - Julio (Unverified)
+  Buenísimo.
+
+35:51 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Y cualquier otra que se te ocurra, pues, Lius, al final, o sea, mientras más nos pidas de una, mejor, porque vamos hilando todo, ¿cachai?  Y te vamos dando una solución integral. Entonces si tenéis otras cosas que... Vayan por ahí, ideal que nos cuenten.
+
+36:07 - Ljubinka Basic
+  Mira, yo tengo algunas automatizaciones que yo creo que podría ser bastante sencillo dentro de lo que es Intervent. Que hay muchas cartas que se solicitan, que no son por nuestro cliente principal, porque eso yo lo saco automática de esta plataforma, sino que hay cartas que son de clientes directos que sí las tenemos que hacer de forma manual.  Y yo creo que eso también podría ser algo que incluyéramos dentro de Intervent. Que, por ejemplo, la información de estas cartas se completa principalmente con los VL, entonces que pudiese leer la información del VL y completarse.  Perfecto.
+
+36:44 - Julio (Unverified)
+  los estándares listos, todo el template, y ponemos la carta tipo 1, 2, 3, 4, 5, para buscar la información que ya tenemos, y te la deja lista para enviar.  Perfecto.
+
+36:58 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Que no perdáis más tiempo en ninguna acción que no te genere valor para el negocio. O sea, no puedo...  Y perder tiempo en estar cliqueando y mirando y traspasando datos, o sea, eso lo debería llevar a cero prácticamente.
+
+37:10 - Julio (Unverified)
+  Y lo que le digo a todos los posibles clientes, en general a todo el mundo, lo que hacemos nosotros suena bien bonito porque es automatización.  Y cuando ve automatización lo primero que piensa es en ahorro de tiempo, en el caso de empresas grandes ahorro personal, porque a veces es eso.  Pero yo lo que he visto en este tiempo que ya llevo haciéndolo, que finalmente lo que agrega mucho más valor es el control y la trazabilidad.  Más que el ahorro de tiempo, es saber en todo momento dónde está la información, que tener las alertas para tomar decisiones en tiempo, no estar mirando por el retrovisor.  Entonces tener toda la información lista y tener la tranquilidad y la certeza que las cosas se están haciendo bien.  Ya de hecho, tú me dices eso y al tiro se me ocurre otra cosa.
+
+37:55 - Ljubinka Basic
+  Nosotros, por ejemplo, funcionamos con tiempos de prescripción, ¿cachai? Todos los casos tienen un tiempo y esto... En el fondo es según legislación.  Los casos chilenos y peruanos tienen dos años de prescripción porque funcionan bajo las reglas de Hamburgo versus la mayor parte de los otros países del mundo que están bajo las reglas de la Haya y solamente tienes un año para tramitar el caso desde la fecha de descarga, porque se entiende que desde la fecha de descarga de la mercancía en el puerto de destino, se entiende bajo la custodia del residuo.  Y de ahí empieza a correr en adelante el año. Tú durante ese año tienes que haber ya negociado o pedido una extensión de tiempo al transportista, qué sé yo, pero sería desde esa fecha hasta un año para que tú hicieras algo o si en el caso muere finalmente y después no tienes derecho a reclamar.  Y nosotros estamos funcionando con una de las planillas, al menos en FIS, con un sistema de semáforo en Excel, ¿cachai?  Como que nos va ordenando. Fathom color rojo, amarillo, cuando está amarillo más cercano, y en el rojo es como, bueno, alerta, te queda muy poco tiempo para hacer algo con este caso, o el caso va a morir.  Pero sería genial, por ejemplo, lo que mencionaste tú, algún tipo de alerta, o algo, porque finalmente esto es mucho ojo humano.
+
+39:26 - Julio (Unverified)
+  Sí, no, eso, dalo por hecho, porque esto, la gracia es que se haga un sistema que se perfile, entonces tú vas a tener un perfil que va a ser la gerente de esta área, o directora, en caso de que tengáis participación para otro negocio, el CEO va tener otro perfil, los ejecutivos tienen otro perfil, y por lo tanto las alertas llegan de forma discriminada a quien corresponda.  Entonces, la raja que tú tu celular tengáis, te metáis a tu sistema, y ya te muestres la alertita, ¿a qué pasó acá?  Me quedan dos meses para tramitar esto, y no alcanzo, sé, lo que ustedes hayan definido, pero sí, muy factible.  Buenísimo, sí, porque mira, yo te cuento, hago...
+
+40:03 - Ljubinka Basic
+  te cuento, cuento, cuento, Con Fis, que en el fondo el otro departamento que tengo a cargo, hago revisiones cada dos semanas con cada uno de los handlers, y cada handler tiene más o menos en promedio 150 casos.  Y me siento a revisar con ellos el estatus de esos 150 casos cada dos semanas, ¿cachai? Y lo voy diciendo, bueno, porque este caso no se ha movido, en el fondo tú sabes que tienes que cada dos semanas con el otro caso.
+
+40:29 - Julio (Unverified)
+  ¿Lo revisas cada cuánto, cada dos semanas? Cada dos semanas reviso caso a caso con ellos, ¿cachai?
+
+40:34 - Ljubinka Basic
+  Y es súper manual, finalmente me meto a revisar la última fecha de actualización, así.
+
+40:40 - Julio (Unverified)
+  Mucho mejor que te estén avisando en vivo si es que hay algo que se salió del margen versus llegar a la semana y enterarte un pastel, donde probablemente a lo mejor no tenés tiempo para reaccionar, etc.  Porque me ha pasado de esto.
+
+40:54 - Ljubinka Basic
+  ¿Verdad? Me ha pasado de que...
+
+40:56 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Poderí tener incluso un semáforo que además diga, o sea, sé, tantos días sin moverse, tantos días sin moverse, si tú veías el tiro, o sea...  Además encima tenéis la alarma de un rango, pero además de decir, oye, este lleva cinco días, lleva siete. Pero ahí ponte tú, ¿puede conversar con el correo?
+
+41:11 - Ljubinka Basic
+  Porque yo actualmente tengo que confiar en la actualización que ellos registran en la planilla. Y obviamente ellos saben que si quisieran hacer el engaño es difícil porque yo siempre aleatoriamente me meto en algún caso a verificar que corresponda.  Saben que durante la revisión yo hago eso, entonces no se arriesgan, pero podrían llegar a hacerlo, podrían llegar a decir, chucha, no moví este caso, voy a poner la fecha como que lo moví.
+
+41:40 - Julio (Unverified)
+  Acá podrían también hacerlo, pero que ha registrado todo. O lo están haciendo con esta fecha y nosotros podemos poner que no corresponda, por lo tanto bloquear, que los estados de, que los cambios de estado solo se puedan hacer y que registre el time, el time stamp del momento, ¿no?  Esto es, por eso te digo, para el control es maravilloso.
+
+41:59 - Ljubinka Basic
+  Perfecto, sí, porque mira, toda la pega, por ejemplo, de FIS... ¡Gracias! Es correo electrónico. Ellos todos los casos los manejan, los presentan por correo electrónico al transportista, después lo están negociando por correo electrónico, si hay una extensión de tiempo que tienen que pedir es por correo electrónico, entonces finalmente ellos llevan el registro de la gestión que hacen por correo a la planilla.  Ahí es lo que podemos hacer, ¿cómo se dice tu nombre?
+
+42:31 - Julio (Unverified)
+  Ljubinka, más fácil. Ahí lo que podemos hacer es partir por esto que ya vimos, porque después yo veo que hay un módulo que es muy operativo y que está también muy fácil de hacer, de tal manera que, por ejemplo, todo esto que tú me dijiste, se haga de manera automática y que tengáis todos los correos que envíen desde la plataforma, que no tengan que estar perdiendo tiempo en eso, además de darle ya una identidad empresa para no tener que estar viendo formato.  Sale todo siempre igual, con los logos como corresponde, con la información donde corresponde, y así, de nuevo, el tiempo de tu gente lo usáis para que piensen, para que rellenen.  Para que controlen, o que hagan las tareas que las máquinas no pueden, que realmente son las relaciones humanas, y tú pegas bien de relaciones humanas, ¿me entiendes?
+
+43:11 - Ljubinka Basic
+  Sí, súper.
+
+43:12 - Julio (Unverified)
+  todos va tomando por teléfono y cosas así, entonces tenés que liberarle las manos a esas personas, ¿sí?
+
+43:21 - Ljubinka Basic
+  Perfecto, maravilloso. Eso, chicos.
+
+43:25 - Rodrigo Sauvalle Escobar (humadis.cl)
+  ¿Anda pensando en qué hacer en tu tiempo libre, Ljubo?
+
+43:30 - Ljubinka Basic
+  Vacación, quiero. Pero sin niños. Claro, sin niños.
+
+43:37 - Julio (Unverified)
+  La otra vez vi el mejor reel, ya me he reído, sé que se lo mandaba a todo el mundo porque salen una familia.  Y yo creo que para él va a ser, bueno, como buen CEO, si ustedes presentan ese demo, el fondo, el maravillarlo con eso va a ser el todo.
+
+43:56 - Ljubinka Basic
+  No te preocupes, sí.
+
+43:57 - Julio (Unverified)
+  Ese es el objetivo. Eso.
+
+43:59 - Rodrigo Sauvalle Escobar (humadis.cl)
+  Ahí ustedes me van contando, entonces.
+
+44:02 - Ljubinka Basic
+  Sí. ¿Ya? Y coordinamos. Eso. Excelente fin de semana. Estén súper, cuídense, un abrazo grande. Igual tú, fin de... Chao, chao.  Chao, chao.

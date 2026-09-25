@@ -35,6 +35,7 @@ import {
   Caso,
   DamageAnalysis,
   DocumentType,
+  DocumentStatus,
   Jurisdiccion,
   NewCaseInput,
   RubroAdicional,
@@ -47,6 +48,7 @@ import {
   CalculationMethodConfig,
   CalculationMethodId,
   TemplateConfig,
+  TemplateDownloadFormat,
   TemplateId,
   DischargeDateType,
   CurrencyCode
@@ -57,17 +59,31 @@ import { exportCaseTrackingXlsx, exportHistoricalMemoryXlsx } from "./lib/caseEx
 import {
   canEditCalculation,
   calculateLoss,
+  calculatePrescription,
   currency,
   daysWithoutMovement,
   DOCUMENT_TYPES,
-  documentCompleteness,
+  documentChecklist,
+  documentChecklistCoverage,
+  DOCUMENT_STATUS_LABELS,
   HANDLERS,
   hasRequiredMinimum,
   INSPECTORS,
+  INSPECTOR_EVOLUTION_ENABLED,
   INACTIVITY_ALERT_DAYS,
+  INACTIVITY_ALERT_RECIPIENTS,
+  inactivityAlert,
+  isCanonicalCaseReference,
+  isChecklistItemComplete,
+  lastMovementAt,
+  missingRequiredDocumentTypes,
+  normalizeCaseReference,
   nextStatusFromCase,
   pendingField,
+  PRESCRIPTION_RULES,
   prescriptionStatus,
+  REFERENCE_CHANGE_REASONS,
+  referencePrescriptionMismatch,
   suggestDamageMerit,
   suggestHandler
 } from "./lib/business";
@@ -78,10 +94,16 @@ import {
   LETTER_TEMPLATES,
   LetterTemplateId,
   TEMPLATE_TOKENS,
+  templateContentFingerprint,
   templateConflicts,
+  templateHasPendingFields,
+  templateLockedTokenIssues,
+  templateMissingAttachments,
+  templateRequiredTokenIssues,
   templateTokenIssues
 } from "./lib/templates";
 import { buildJointInspectionLetter } from "./lib/inspection";
+import { HISTORICAL_BASELINE } from "./lib/historySeed";
 
 const STATUS_LABELS: CaseStatus[] = [
   "Datos incompletos",
@@ -111,6 +133,16 @@ function downloadTextFile(fileName: string, text: string) {
 
 function downloadHtmlFile(fileName: string, html: string) {
   const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadWordFile(fileName: string, html: string) {
+  const blob = new Blob([html], { type: "application/msword;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -176,6 +208,7 @@ function vesselVoyageKey(caso: Caso) {
 function AppShell({ children }: { children: React.ReactNode }) {
   const { usuario, setUsuario, resetDemo } = useDemoStore();
   const navigate = useNavigate();
+  if (!INSPECTOR_EVOLUTION_ENABLED && usuario.role === "Inspector") return <Navigate to="/" replace />;
   return (
     <div className="app-shell min-h-screen text-ink">
       <header className="app-header sticky top-0 z-20">
@@ -218,7 +251,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 ))}
                 <option value="Gerente|Ljubinka Basic">Gerente · Ljubinka</option>
                 <option value="CEO|Dirección NPR">CEO · Dirección</option>
-                <option value={`Inspector|${INSPECTORS[0]}`}>Inspector · {INSPECTORS[0]}</option>
+                {INSPECTOR_EVOLUTION_ENABLED && <option value={`Inspector|${INSPECTORS[0]}`}>Inspector · {INSPECTORS[0]}</option>}
               </select>
               <button className="icon-button" title="Reiniciar datos demo" onClick={resetDemo}>
                 <RefreshCcw size={18} />
@@ -256,7 +289,6 @@ function RoleSelectorPage() {
     { role: "Handler" as const, nombre: "Emely Lambraño", title: "Handler", copy: "Procesa casos, carga documentos y ejecuta cálculos." },
     { role: "Gerente" as const, nombre: "Ljubinka Basic", title: "Gerente", copy: "Supervisa todos los casos, alertas y distribución del equipo." },
     { role: "CEO" as const, nombre: "Dirección NPR", title: "CEO", copy: "Revisa riesgos críticos y estado ejecutivo del portafolio." },
-    { role: "Inspector" as const, nombre: INSPECTORS[0], title: "Inspector", copy: "Consulta solo casos asignados y registra la inspección." }
   ];
   return (
     <div className="role-gate">
@@ -328,7 +360,15 @@ function RoleSelectorPage() {
 
 function DashboardPage() {
   const visibleCases = useVisibleCases();
-  const { documentos, calculosPerdida, bitacora, usuario } = useDemoStore();
+  const {
+    documentos,
+    calculosPerdida,
+    bitacora,
+    usuario,
+    registerInactivityAlertSent,
+    markInactivityAlertRead,
+    resolveInactivityAlert
+  } = useDemoStore();
   const [handlerFilter, setHandlerFilter] = useState("Todos");
   const filtered = handlerFilter === "Todos" ? visibleCases : visibleCases.filter((caso) => caso.claimHandler === handlerFilter);
   const massVesselGroups = useMemo(() => {
@@ -345,11 +385,11 @@ function DashboardPage() {
       .sort((left, right) => right.cases.length - left.cases.length || left.vessel.localeCompare(right.vessel));
   }, [filtered]);
   const alerts = filtered
-    .map((caso) => ({ caso, prescription: prescriptionStatus(caso), staleDays: daysWithoutMovement(caso) }))
-    .filter((item) => item.prescription.tone !== "ok" || item.staleDays > INACTIVITY_ALERT_DAYS)
+    .map((caso) => ({ caso, prescription: prescriptionStatus(caso), inactivity: inactivityAlert(caso, bitacora) }))
+    .filter((item) => item.prescription.tone !== "ok" || item.inactivity.active)
     .sort((a, b) => {
       const priority = { danger: 0, missing: 1, warn: 2, ok: 3 };
-      return priority[a.prescription.tone] - priority[b.prescription.tone] || b.staleDays - a.staleDays;
+      return priority[a.prescription.tone] - priority[b.prescription.tone] || b.inactivity.staleDays - a.inactivity.staleDays;
     });
   const statusCounts = STATUS_LABELS.map((status) => ({
     status,
@@ -359,13 +399,13 @@ function DashboardPage() {
     handler,
     count: filtered.filter((caso) => caso.claimHandler === handler).length
   }));
-  const staleCount = filtered.filter((caso) => daysWithoutMovement(caso) > INACTIVITY_ALERT_DAYS).length;
+  const staleCount = filtered.filter((caso) => inactivityAlert(caso, bitacora).active).length;
   const riskCount = alerts.length;
   const coverage = filtered.length
     ? Math.round(
         filtered.reduce((sum, caso) => {
-          const completeness = documentCompleteness(documentos.filter((doc) => doc.casoId === caso.id));
-          return sum + (completeness.completed / completeness.total) * 100;
+          const calculo = calculosPerdida.find((item) => item.casoId === caso.id);
+          return sum + documentChecklistCoverage(caso, documentos.filter((doc) => doc.casoId === caso.id), calculo);
         }, 0) / filtered.length
       )
     : 0;
@@ -434,11 +474,10 @@ function DashboardPage() {
         </div>
       </section>
 
-      {staleCount > 0 && (
-        <div className="notice mt-5" role="status">
-          Aviso de gestión: {staleCount} {staleCount === 1 ? "caso lleva" : "casos llevan"} más de {INACTIVITY_ALERT_DAYS} días sin movimiento. El aviso se mantiene hasta registrar una nueva actualización.
-        </div>
-      )}
+      <div className="notice mt-5" role={staleCount > 0 ? "status" : undefined}>
+        <strong>Regla de inactividad</strong>: se toman días corridos en la zona horaria Santiago desde el último movimiento válido. El aviso se activa al cumplir {INACTIVITY_ALERT_DAYS} días, se repite diariamente y llega a {INACTIVITY_ALERT_RECIPIENTS}. Plataforma siempre; correo cuando el caso está cerca de prescribir o llega a 20 días sin movimiento.
+        {staleCount > 0 && <> Hay {staleCount} {staleCount === 1 ? "caso" : "casos"} en alerta.</>}
+      </div>
 
       <section className="dashboard-grid mt-6 grid gap-5 lg:grid-cols-[1.05fr_1.5fr]">
         <div className="panel priority-panel">
@@ -448,20 +487,49 @@ function DashboardPage() {
           </div>
           <div className="space-y-3">
             {alerts.length === 0 && <EmptyState text="No hay alertas para el filtro actual." />}
-            {alerts.map(({ caso, prescription, staleDays }) => (
-              <Link key={caso.id} to={`/casos/${encodeURIComponent(caso.id)}`} className="alert-row">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <StatusPill label={prescription.label} tone={prescription.tone} />
-                    {staleDays > INACTIVITY_ALERT_DAYS && <StatusPill label={`${staleDays} días sin movimiento`} tone="warn" />}
+            {alerts.map(({ caso, prescription, inactivity }) => (
+              <div key={caso.id} className="alert-row">
+                <Link to={`/casos/${encodeURIComponent(caso.id)}`} className="alert-row-link">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusPill label={prescription.label} tone={prescription.tone} />
+                      {inactivity.active && <StatusPill label={`${inactivity.staleDays} días sin movimiento`} tone="warn" />}
+                    </div>
+                    <p className="mt-2 font-semibold">{caso.id}</p>
+                    <p className="text-sm text-slate-600">
+                      {caso.assured} · {caso.opponent} · {caso.claimHandler}
+                    </p>
                   </div>
-                  <p className="mt-2 font-semibold">{caso.id}</p>
-                  <p className="text-sm text-slate-600">
-                    {caso.assured} · {caso.opponent} · {caso.claimHandler}
-                  </p>
-                </div>
-                <ChevronRight size={18} />
-              </Link>
+                  <ChevronRight size={18} />
+                </Link>
+                {inactivity.active && (usuario.role === "Handler" || usuario.role === "Gerente") && (
+                  <div className="alert-actions">
+                    <StatusPill label={inactivity.emailRequired ? "Plataforma + correo" : "Plataforma"} tone="warn" />
+                    {inactivity.readAt && <span className="alert-read-label">Leída</span>}
+                    <button className="button-secondary small" type="button" onClick={() => markInactivityAlertRead(caso.id)}>
+                      Marcar leída
+                    </button>
+                    <button className="button-secondary small" type="button" onClick={() => registerInactivityAlertSent(caso.id, "plataforma")}>
+                      Registrar plataforma
+                    </button>
+                    {inactivity.emailRequired && (
+                      <button className="button-secondary small" type="button" onClick={() => registerInactivityAlertSent(caso.id, "correo")}>
+                        Registrar correo
+                      </button>
+                    )}
+                    {usuario.role === "Gerente" && (
+                      <>
+                        <button className="button-secondary small" type="button" onClick={() => resolveInactivityAlert(caso.id, "cerrar")}>
+                          Cerrar alerta
+                        </button>
+                        <button className="button-secondary small" type="button" onClick={() => resolveInactivityAlert(caso.id, "silenciar")}>
+                          Silenciar
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         </div>
@@ -567,20 +635,20 @@ function BenchmarkPage() {
   const rows = HANDLERS.map((handler) => {
     const handlerCases = visibleCases.filter((caso) => caso.claimHandler === handler);
     const coverageValues = handlerCases.map((caso) => {
-      const completeness = documentCompleteness(documentos.filter((doc) => doc.casoId === caso.id));
-      return (completeness.completed / completeness.total) * 100;
+      const calculo = calculosPerdida.find((item) => item.casoId === caso.id);
+      return documentChecklistCoverage(caso, documentos.filter((doc) => doc.casoId === caso.id), calculo);
     });
     const coverage = coverageValues.length
       ? Math.round(coverageValues.reduce((sum, value) => sum + value, 0) / coverageValues.length)
       : 0;
     const pendingDocumentCases = handlerCases.filter(
-      (caso) => documentCompleteness(documentos.filter((doc) => doc.casoId === caso.id)).missing.length > 0
+      (caso) => missingRequiredDocumentTypes(caso, documentos.filter((doc) => doc.casoId === caso.id), calculosPerdida.find((item) => item.casoId === caso.id)).length > 0
     ).length;
     const alerts = handlerCases.filter((caso) => {
       const prescription = prescriptionStatus(caso);
-      return prescription.tone !== "ok" || daysWithoutMovement(caso) > INACTIVITY_ALERT_DAYS;
+      return prescription.tone !== "ok" || inactivityAlert(caso, bitacora).active;
     }).length;
-    const stale = handlerCases.filter((caso) => daysWithoutMovement(caso) > INACTIVITY_ALERT_DAYS).length;
+    const stale = handlerCases.filter((caso) => inactivityAlert(caso, bitacora).active).length;
     const completeCalculations = handlerCases.filter((caso) => caso.estado === "Cálculo completo").length;
     return {
       handler,
@@ -605,8 +673,8 @@ function BenchmarkPage() {
   const portfolioCoverage = visibleCases.length
     ? Math.round(
         visibleCases.reduce((sum, caso) => {
-          const completeness = documentCompleteness(documentos.filter((doc) => doc.casoId === caso.id));
-          return sum + (completeness.completed / completeness.total) * 100;
+          const calculo = calculosPerdida.find((item) => item.casoId === caso.id);
+          return sum + documentChecklistCoverage(caso, documentos.filter((doc) => doc.casoId === caso.id), calculo);
         }, 0) / visibleCases.length
       )
     : 0;
@@ -682,7 +750,7 @@ function BenchmarkPage() {
           </table>
         </div>
         <div className="notice mt-4">
-          Docs pendientes = al menos un documento del checklist faltante. Alerta = prescripción no verde o más de 15 días sin movimiento.
+          Docs pendientes = al menos un documento del checklist faltante. Alerta = prescripción no verde o inactividad activa al cumplir 15 días corridos; correo adicional desde riesgo de prescripción o 20 días sin movimiento.
         </div>
       </section>
     </AppShell>
@@ -797,13 +865,10 @@ function CasesPage() {
 }
 
 function HistoricalMemoryPage() {
-  const { historico, ultimaImportacionHistorico, historicoCargando, importHistoricalCases, hydrateHistoricalCases } = useDemoStore();
+  const { historico, ultimaImportacionHistorico, historicoCargando, hydrateHistoricalCases } = useDemoStore();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("Todos");
   const [selectedId, setSelectedId] = useState<string>();
-  const [isImporting, setIsImporting] = useState(false);
-  const [importError, setImportError] = useState("");
-  const [importNotice, setImportNotice] = useState("");
   const duplicateKeys = new Set(
     [...historico.reduce((counts, record) => counts.set(record.referenceKey, (counts.get(record.referenceKey) || 0) + 1), new Map<string, number>())]
       .filter(([, count]) => count > 1)
@@ -829,59 +894,42 @@ function HistoricalMemoryPage() {
   const selected = historico.find((record) => record.id === selectedId);
   const historicalCalculationCount = historico.filter((record) => record.calculoHistorico).length;
 
-  const importFile = async (file?: File) => {
-    if (!file) return;
-    setIsImporting(true);
-    setImportError("");
-    setImportNotice("");
-    try {
-      const { historicalRecordKey, parseHistoryWorkbook } = await import("./lib/historyImport");
-      const batch = await parseHistoryWorkbook(file);
-      if (batch.records.length === 0) {
-        setImportError("No se encontraron referencias de casos reconocibles en el archivo.");
-        return;
-      }
-      const importedCount = await importHistoricalCases(batch, file);
-      const firstRecordKey = historicalRecordKey(batch.records[0]);
-      const selectedRecord = useDemoStore.getState().historico.find((record) => historicalRecordKey(record) === firstRecordKey);
-      setSelectedId(selectedRecord?.id);
-      setImportNotice(`${importedCount} registros históricos nuevos incorporados desde ${batch.sheets.filter((sheet) => sheet.importedRows > 0).length} hojas. ${importedCount < batch.records.length ? `${batch.records.length - importedCount} registros duplicados fueron omitidos. ` : ""}Los datos activos no fueron modificados.`);
-    } catch {
-      setImportError("No fue posible leer el Excel. Revisa que sea un archivo .xlsx o .xls válido.");
-    } finally {
-      setIsImporting(false);
-    }
-  };
-
   return (
     <AppShell>
       <div className="section-heading">
         <div>
           <p className="eyebrow">Memoria operativa</p>
           <h2>Historial de casos</h2>
-          <p className="section-subtitle">Consulta los casos migrados sin mezclarlos con el trabajo activo. Cada registro conserva su origen y campos identificados, junto con el Excel fuente asociado.</p>
+          <p className="section-subtitle">Consulta el historial contractual incluido en el demo sin mezclarlo con el trabajo activo. Cada registro conserva su origen y los campos identificados.</p>
         </div>
-        <label className="button-primary history-import-button">
-          <FolderUp size={17} /> {isImporting ? "Procesando Excel..." : "Importar historial Excel"}
-          <input type="file" accept=".xlsx,.xls" disabled={isImporting} onChange={(event) => importFile(event.target.files?.[0])} />
-        </label>
         <button className="button-secondary" type="button" disabled={historico.length === 0} onClick={() => exportHistoricalMemoryXlsx(historico, `memoria-historica-${new Date().toISOString().slice(0, 10)}.xlsx`)}>
           <Download size={17} /> Descargar memoria
         </button>
       </div>
 
-      {importError && <div className="form-error">{importError}</div>}
-      {importNotice && <div className="notice mb-4">{importNotice}</div>}
+      <section className="history-scope-panel" aria-label="Alcance de la memoria histórica">
+        <div className="history-scope-icon"><History size={20} /></div>
+        <div className="history-scope-copy">
+          <p className="eyebrow">Alcance contractual</p>
+          <h3>Memoria histórica precargada: {HISTORICAL_BASELINE.records.toLocaleString("es-CL")} registros en {HISTORICAL_BASELINE.sheets} hojas</h3>
+          <p>Esta carga forma parte del sistema y no requiere subir el Excel manualmente. Los aproximadamente {HISTORICAL_BASELINE.excludedActiveCases.toLocaleString("es-CL")} casos activos masivos futuros pertenecen a otro universo: no se incorporan aquí ni se mezclan con los casos activos.</p>
+        </div>
+        <div className="history-scope-facts">
+          <div><strong>{HISTORICAL_BASELINE.records.toLocaleString("es-CL")}</strong><span>históricos</span></div>
+          <div><strong>{HISTORICAL_BASELINE.sheets}</strong><span>hojas fuente</span></div>
+          <div><strong>{HISTORICAL_BASELINE.excludedActiveCases.toLocaleString("es-CL")}</strong><span>activos futuros excluidos</span></div>
+        </div>
+      </section>
 
       <section className="history-metrics">
         <Metric title="Registros históricos" value={historico.length} icon={<History size={20} />} />
         <Metric title="Referencias repetidas" value={duplicateKeys.size} icon={<AlertTriangle size={20} />} tone={duplicateKeys.size > 0 ? "warn" : "ok"} />
-        <Metric title="Hojas importadas" value={ultimaImportacionHistorico?.sheets.filter((sheet) => sheet.importedRows > 0).length || 0} icon={<FileText size={20} />} />
+        <Metric title="Hojas precargadas" value={ultimaImportacionHistorico?.sheets.filter((sheet) => sheet.importedRows > 0).length || 0} icon={<FileText size={20} />} />
         <Metric title="Con cálculo histórico" value={historicalCalculationCount} icon={<BarChart3 size={20} />} tone={historicalCalculationCount > 0 ? "ok" : undefined} />
       </section>
 
       <p className="history-memory-note">
-        Los cálculos históricos son evidencia de referencia. El sistema no los convierte en una decisión automática para los casos activos.
+        La memoria histórica incluida se carga automáticamente y se conserva separada de los casos activos. Sus cálculos son evidencia de referencia; no se convierten en una decisión automática.
       </p>
 
       <section className="history-layout mt-5">
@@ -906,7 +954,7 @@ function HistoricalMemoryPage() {
           {historicoCargando ? (
             <EmptyState text="Cargando memoria histórica..." />
           ) : historico.length === 0 ? (
-            <EmptyState text="Importa el Excel histórico para crear la memoria consultable." />
+            <EmptyState text="No fue posible cargar la memoria histórica incluida en el demo." />
           ) : (
             <div className="history-table-wrap">
               <table className="data-table">
@@ -987,7 +1035,7 @@ function HistoricalRecordDetail({ record, duplicate }: { record?: HistoricalCase
         <p>{record.incidentSummaryRaw || "Sin resumen registrado en la fuente."}</p>
       </div>
       <div className="history-source-note">
-        Fuente: hoja <strong>{record.sourceSheet}</strong>, fila <strong>{record.sourceRow}</strong>. Importado el {new Date(record.importedAt).toLocaleString("es-CL")}. El archivo Excel original permanece asociado al lote de importación.
+        Universo: memoria histórica contractual, separado de los casos activos. Fuente: hoja <strong>{record.sourceSheet}</strong>, fila <strong>{record.sourceRow}</strong>. Cargado el {new Date(record.importedAt).toLocaleString("es-CL")}. El archivo histórico incluido permanece asociado a la memoria del demo.
       </div>
       <details className="history-raw-details">
         <summary>Ver trazabilidad de la fila original</summary>
@@ -1032,6 +1080,11 @@ function NewCasePage() {
   const [processingError, setProcessingError] = useState("");
   const [error, setError] = useState("");
   const hasData = Object.values(input).some(Boolean);
+  const duplicateReference = input.id?.trim()
+    ? casos.find((caso) => normalizeCaseReference(caso.id) === normalizeCaseReference(input.id || ""))
+    : undefined;
+  const referenceMismatch = referencePrescriptionMismatch(input.id, input.dateOfDischarge, input.jurisdiccion);
+  const calculatedPrescription = calculatePrescription(input.dateOfDischarge, input.jurisdiccion);
   if (usuario.role !== "Handler") return <Navigate to="/casos" replace />;
 
   const update = (key: keyof NewCaseInput, value: string) => {
@@ -1055,6 +1108,7 @@ function NewCasePage() {
         claimHandler: suggestHandler(extracted.assured) || current.claimHandler || usuario.nombre,
         csClaimNo: current.csClaimNo || extracted.csClaimNo,
         assured: current.assured || extracted.assured,
+        consignee: current.consignee || extracted.consignee,
         opponent: current.opponent || extracted.opponent,
         vessel: current.vessel || extracted.vessel,
         voyage: current.voyage || extracted.voyage,
@@ -1094,7 +1148,10 @@ function NewCasePage() {
       return "La fecha efectiva de descarga no puede ser futura. Selecciona ETA si corresponde.";
     }
     if (input.claimAmount !== undefined && input.claimAmount <= 0) return "El monto reclamado debe ser positivo.";
-    if (input.id && casos.some((caso) => caso.id === input.id)) return "La referencia ya existe en el expediente. Abre el caso existente o corrige la referencia antes de continuar.";
+    if (input.id && !isCanonicalCaseReference(input.id)) return "La referencia debe usar el formato PRE-FIS-... o PRE-FIS/CLIENTE-... . Las referencias históricas se conservan al migrarlas, pero no se generan nuevas con formato libre.";
+    if (input.id && casos.some((caso) => normalizeCaseReference(caso.id) === normalizeCaseReference(input.id || ""))) {
+      return "La referencia ya existe en el expediente. Abre el caso existente o corrige la referencia antes de continuar.";
+    }
     return "";
   };
   const save = (complete: boolean) => {
@@ -1130,6 +1187,9 @@ function NewCasePage() {
             </div>
             {drafts.length > 0 && <span className="upload-count">{drafts.length} archivos</span>}
           </div>
+          <div className="notice mt-3" role="note">
+            <strong>Fuente de entrada de Fase 1:</strong> carpeta documental ya descargada. Las conexiones directas a plataformas, API, correo o robots de descarga quedan fuera de este alcance y requieren una evolución aprobada.
+          </div>
           <label
             className={cx("upload-box", isDragging && "dragging")}
             onDragOver={(event) => {
@@ -1162,6 +1222,11 @@ function NewCasePage() {
                   <StatusPill label={draft.estadoExtraccion || "Pendiente"} tone={draft.estadoExtraccion?.startsWith("procesado") ? "ok" : "warn"} />
                 </div>
               ))}
+              {drafts.some((draft) => ["parcial", "no soportado", "requiere OCR"].includes(draft.estadoExtraccion || "")) && (
+                <p className="notice mt-3" role="note">
+                  Algunos archivos requieren revisión técnica individual. El demo aísla ese archivo, conserva su estado y permite continuar con el resto de la carpeta; esta tolerancia es una decisión técnica interna y no un criterio contractual de aceptación.
+                </p>
+              )}
             </div>
           )}
           {proposal && (
@@ -1175,6 +1240,7 @@ function NewCasePage() {
               </div>
               <div className="extraction-grid">
                 <ExtractionValue label="Asegurado" value={input.assured} />
+                <ExtractionValue label="Consignatario" value={input.consignee} />
                 <ExtractionValue label="Transportista / oponente" value={input.opponent} />
                 <ExtractionValue label="Nave / viaje" value={[input.vessel, input.voyage].filter(Boolean).join(" / ")} />
                 <ExtractionValue label="Carga" value={input.cargo} />
@@ -1183,14 +1249,35 @@ function NewCasePage() {
                 <ExtractionValue label="Inspector" value={input.surveyor} />
                 <ExtractionValue label="CS Claim No" value={input.csClaimNo} />
               </div>
+              {proposal.conflictosDetectados && proposal.conflictosDetectados.length > 0 && (
+                <div className="notice mt-3" role="alert">
+                  <strong>Conflictos entre documentos:</strong> {proposal.conflictosDetectados.join(" · ")} . Revisa estos campos antes de guardar; no se resuelven automáticamente.
+                </div>
+              )}
               <p className="notice mt-3">Handler sugerido por cliente: <strong>{input.claimHandler}</strong>. Puedes modificarlo antes de guardar.</p>
               {proposal.propuestaPerdida && <LossProposalSummary proposal={proposal.propuestaPerdida} />}
             </div>
           )}
         </section>
+        {duplicateReference && (
+          <div className="notice mt-4" role="alert">
+            Esta referencia coincide con el caso <strong>{duplicateReference.id}</strong>. No se fusionarán expedientes: corrige la referencia o abre el caso existente.
+          </div>
+        )}
+        {referenceMismatch && (
+          <div className="notice mt-3" role="status">
+            Revisa la referencia: su período de prescripción es <strong>{referenceMismatch.currentPeriod}</strong>, pero con la fecha y jurisdicción actuales el vencimiento cae en <strong>{referenceMismatch.expectedPeriod}</strong> ({new Date(`${referenceMismatch.prescriptionDate}T00:00:00`).toLocaleDateString("es-CL")}). Puedes corregirla antes de guardar.
+          </div>
+        )}
+        {calculatedPrescription && input.jurisdiccion && (
+          <div className="notice mt-3" role="status">
+            {input.dateOfDischargeType === "ETA" ? "Prescripción estimada según ETA" : "Prescripción calculada desde la descarga"}: <strong>{new Date(`${calculatedPrescription}T00:00:00`).toLocaleDateString("es-CL")}</strong> · {PRESCRIPTION_RULES[input.jurisdiccion].scope} · {PRESCRIPTION_RULES[input.jurisdiccion].years} año{PRESCRIPTION_RULES[input.jurisdiccion].years === 1 ? "" : "s"}.
+          </div>
+        )}
         <div className="grid gap-4 md:grid-cols-3">
-          <Field label="Reference No editable">
-            <input className="input" value={input.id || ""} onChange={(event) => update("id", event.target.value)} placeholder="Autogenerado si queda vacío" />
+          <Field label="Referencia interna editable">
+            <input className="input" value={input.id || ""} onChange={(event) => update("id", event.target.value)} placeholder="PRE-FIS-MSC-2026-03/27-1456" />
+            <small className="mt-1 block text-xs text-slate-500">Formato: PRE-FIS-CARRIER-AÑO-MM/AA-CORRELATIVO o PRE-FIS/CLIENTE-CARRIER-AÑO-MM/AA-CORRELATIVO.</small>
           </Field>
           <Field label="Claim handler *">
             <select className="input" value={input.claimHandler} onChange={(event) => update("claimHandler", event.target.value)}>
@@ -1204,6 +1291,13 @@ function NewCasePage() {
           </Field>
           <Field label="Asegurado *">
             <input className="input" value={input.assured || ""} onChange={(event) => update("assured", event.target.value)} />
+          </Field>
+          <Field label="Consignatario *">
+            <input className="input" value={input.consignee || ""} onChange={(event) => update("consignee", event.target.value)} />
+          </Field>
+          <Field label="Código cliente directo">
+            <input className="input" value={input.codigoCliente || ""} onChange={(event) => update("codigoCliente", event.target.value)} placeholder="FRU · opcional" />
+            <small className="mt-1 block text-xs text-slate-500">Solo para casos directos. Se incorpora como PRE-FIS/CLIENTE-...</small>
           </Field>
           <Field label="Oponente / transportista *">
             <input className="input" value={input.opponent || ""} onChange={(event) => update("opponent", event.target.value)} />
@@ -1235,8 +1329,8 @@ function NewCasePage() {
           <Field label="Jurisdicción *">
             <select className="input" value={input.jurisdiccion || ""} onChange={(event) => update("jurisdiccion", event.target.value as Jurisdiccion)}>
               <option value="">Seleccionar manualmente</option>
-              <option value="LaHaya">La Haya · 1 año</option>
-              <option value="Hamburgo">Hamburgo · 2 años Chile/Perú</option>
+              <option value="LaHaya">La Haya · 1 año desde descarga</option>
+              <option value="Hamburgo">Hamburgo · 2 años desde descarga (Chile/Perú)</option>
             </select>
           </Field>
           <Field label="Causa de daño">
@@ -1280,18 +1374,30 @@ function NewCasePage() {
 
 function CaseDetailPage() {
   const { id } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const decodedId = decodeURIComponent(id || "");
   const { casos, documentos, calculosPerdida, bitacora, usuario, generateReviewReport, transitionCase, revertCase, updateCaseDetails, assignInspector } = useDemoStore();
   const caso = casos.find((item) => item.id === decodedId);
-  const params = new URLSearchParams(window.location.search);
-  const [tab, setTab] = useState(params.get("tab") || "documentos");
+  const params = new URLSearchParams(location.search);
+  const requestedTab = params.get("tab") || "documentos";
+  const validTabs = ["documentos", "analisis", "calculo", "informe", "historial", "cartas"];
+  const initialTab = requestedTab === "inspeccion" && !INSPECTOR_EVOLUTION_ENABLED
+    ? "documentos"
+    : validTabs.includes(requestedTab) || (INSPECTOR_EVOLUTION_ENABLED && requestedTab === "inspeccion")
+      ? requestedTab
+      : "documentos";
+  const [tab, setTab] = useState(initialTab);
+  useEffect(() => {
+    setTab(initialTab);
+  }, [initialTab]);
   const [showTransfer, setShowTransfer] = useState<"Traspasado a FIS" | "Traspasado a Lawgistic" | null>(null);
   const [revertReason, setRevertReason] = useState("");
   const [revertStatus, setRevertStatus] = useState<CaseStatus>("Preclaim");
   const [notice, setNotice] = useState("");
   const [isEditingCase, setIsEditingCase] = useState(false);
   const [editReference, setEditReference] = useState("");
+  const [editReferenceReason, setEditReferenceReason] = useState("");
   const [editDateOfDischarge, setEditDateOfDischarge] = useState("");
   const [editDateType, setEditDateType] = useState<DischargeDateType>("Real");
   const [editJurisdiccion, setEditJurisdiccion] = useState<Jurisdiccion | "">("");
@@ -1316,15 +1422,20 @@ function CaseDetailPage() {
   const calculo = calculosPerdida.find((item) => item.casoId === caso.id);
   const events = bitacora.filter((event) => event.casoId === caso.id).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   const pres = prescriptionStatus(caso);
-  const staleDays = daysWithoutMovement(caso);
+  const referenceMismatch = referencePrescriptionMismatch(caso.id, caso.dateOfDischarge, caso.jurisdiccion);
+  const staleDays = daysWithoutMovement(caso, bitacora);
+  const inactivity = inactivityAlert(caso, bitacora);
+  const lastMovement = lastMovementAt(caso, bitacora);
   const canWrite = usuario.role === "Handler" && caso.claimHandler === usuario.nombre;
   const isTransferred = caso.estado === "Traspasado a FIS" || caso.estado === "Traspasado a Lawgistic";
-  const canMutateCase = canWrite && !isTransferred;
+  const canMutateCase = canWrite;
   const canEditCaseDetails = canMutateCase && canEditCalculation(caso);
   const nextStatus = nextStatusFromCase(caso, caseDocs, calculo);
   const canAdvance = nextStatus !== caso.estado;
   const isInspector = usuario.role === "Inspector";
   const activeTab = isInspector ? "inspeccion" : tab;
+  const editReferenceMismatch = referencePrescriptionMismatch(editReference, editDateOfDischarge, editJurisdiccion || undefined);
+  const editCalculatedPrescription = calculatePrescription(editDateOfDischarge, editJurisdiccion || undefined);
 
   const changeTab = (next: string) => {
     setTab(next);
@@ -1336,7 +1447,8 @@ function CaseDetailPage() {
       setNotice("Aún falta completar documentos o cálculo antes de avanzar el estado.");
       return;
     }
-    transitionCase(caso.id, nextStatus, `Estado actualizado automáticamente a ${nextStatus}.`);
+    const result = transitionCase(caso.id, nextStatus, `Estado actualizado automáticamente a ${nextStatus}.`);
+    if (!result.ok) setNotice(result.error || "No se pudo actualizar el estado.");
   };
   const openTransfer = (destination: TransferDestination) => {
     generateReviewReport(caso.id, destination);
@@ -1350,11 +1462,16 @@ function CaseDetailPage() {
       return;
     }
     const destination = showTransfer.replace("Traspasado a ", "");
-    transitionCase(
+    const result = transitionCase(
       caso.id,
       showTransfer,
-      `Caso traspasado a ${destination}. Informe de revisión listo. Edición del expediente bloqueada.`
+      `Caso traspasado a ${destination}. Informe de revisión listo. El expediente permanece editable por el Handler responsable.`
     );
+    if (!result.ok) {
+      setNotice(result.error || "No se pudo completar el traspaso.");
+      setShowTransfer(null);
+      return;
+    }
     setShowTransfer(null);
   };
   const submitRevert = () => {
@@ -1364,6 +1481,7 @@ function CaseDetailPage() {
   };
   const beginCaseEdit = () => {
     setEditReference(caso.id);
+    setEditReferenceReason("");
     setEditDateOfDischarge(caso.dateOfDischarge || "");
     setEditDateType(caso.dateOfDischargeType || "Real");
     setEditJurisdiccion(caso.jurisdiccion || "");
@@ -1372,6 +1490,7 @@ function CaseDetailPage() {
   };
   const cancelCaseEdit = () => {
     setEditError("");
+    setEditReferenceReason("");
     setIsEditingCase(false);
   };
   const saveCaseDetails = () => {
@@ -1381,7 +1500,15 @@ function CaseDetailPage() {
       setEditError("La referencia interna es obligatoria.");
       return;
     }
-    if (casos.some((item) => item.id !== caso.id && item.id.trim().toLocaleLowerCase() === nextReference.toLocaleLowerCase())) {
+    if (nextReference !== caso.id && !isCanonicalCaseReference(nextReference)) {
+      setEditError("La nueva referencia debe usar el formato PRE-FIS-... o PRE-FIS/CLIENTE-... .");
+      return;
+    }
+    if (nextReference !== caso.id && !editReferenceReason) {
+      setEditError("Selecciona el motivo de modificación de la referencia.");
+      return;
+    }
+    if (casos.some((item) => item.id !== caso.id && normalizeCaseReference(item.id) === normalizeCaseReference(nextReference))) {
       setEditError("La referencia ya existe en otro caso.");
       return;
     }
@@ -1394,12 +1521,13 @@ function CaseDetailPage() {
       dateOfDischarge: editDateOfDischarge || undefined,
       dateOfDischargeType: editDateOfDischarge ? editDateType : undefined,
       jurisdiccion: editJurisdiccion || undefined
-    });
+    }, editReferenceReason || undefined);
     if (!result.ok) {
       setEditError(result.error || "No se pudieron guardar los cambios.");
       return;
     }
     setIsEditingCase(false);
+    setEditReferenceReason("");
     navigate(`/casos/${encodeURIComponent(nextReference)}?tab=${tab}`, { replace: true });
   };
   const saveInspectorAssignment = () => {
@@ -1422,14 +1550,19 @@ function CaseDetailPage() {
           <div className="mt-4 flex flex-wrap gap-2">
             <StatusPill label={caso.estado} tone={caso.estado === "Datos incompletos" ? "missing" : caso.estado.includes("Traspasado") ? "ok" : "warn"} />
             <StatusPill label={pres.label} tone={pres.tone} />
-            {staleDays > INACTIVITY_ALERT_DAYS && <StatusPill label={`${staleDays} días sin movimiento`} tone="warn" />}
+            {inactivity.active && <StatusPill label={`${staleDays} días sin movimiento`} tone="warn" />}
           </div>
         </div>
         <div className="case-actions">
           {notice && <p className="notice">{notice}</p>}
-          {staleDays > INACTIVITY_ALERT_DAYS && (
+          {inactivity.active && (
             <p className="notice" role="status">
-              Aviso de gestión: este caso lleva más de {INACTIVITY_ALERT_DAYS} días sin movimiento. Registra una actualización para retirarlo.
+              Aviso de gestión: este caso lleva {INACTIVITY_ALERT_DAYS} días o más sin movimiento según su última actividad válida de bitácora. Registra una acción de gestión para reiniciar el contador.
+            </p>
+          )}
+          {referenceMismatch && (
+            <p className="notice" role="status">
+              Revisa la referencia: usa el período de prescripción <strong>{referenceMismatch.currentPeriod}</strong>, pero la fecha y jurisdicción actuales indican <strong>{referenceMismatch.expectedPeriod}</strong>. Puedes corregirla desde Editar datos clave.
             </p>
           )}
           {canEditCaseDetails && !isEditingCase && (
@@ -1438,7 +1571,7 @@ function CaseDetailPage() {
             </button>
           )}
           {canWrite && isTransferred && (
-            <p className="notice">Caso traspasado: expediente en modo solo lectura. Gerencia puede revertir el estado si se requiere una corrección.</p>
+            <p className="notice">Caso traspasado: el cambio de estado quedó registrado y el expediente sigue editable por el Handler responsable.</p>
           )}
           {usuario.role === "Handler" && !canWrite && (
             <p className="notice">
@@ -1516,15 +1649,34 @@ function CaseDetailPage() {
             <StatusPill label="Revisión humana" tone="warn" />
           </div>
           {editError && <div className="form-error">{editError}</div>}
+          {editReferenceMismatch && (
+            <div className="notice" role="status">
+              La referencia usa el período <strong>{editReferenceMismatch.currentPeriod}</strong>, pero la fecha y jurisdicción indican prescripción en <strong>{editReferenceMismatch.expectedPeriod}</strong>. Si la fecha real cambió, corrige la referencia antes de guardar.
+            </div>
+          )}
+          {editCalculatedPrescription && editJurisdiccion && (
+            <div className="notice" role="status">
+              {editDateType === "ETA" ? "Prescripción estimada según ETA" : "Prescripción calculada desde la descarga"}: <strong>{new Date(`${editCalculatedPrescription}T00:00:00`).toLocaleDateString("es-CL")}</strong> · {PRESCRIPTION_RULES[editJurisdiccion].scope}.
+            </div>
+          )}
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Referencia interna *">
-              <input className="input" value={editReference} onChange={(event) => setEditReference(event.target.value)} autoFocus />
+              <input className="input" value={editReference} onChange={(event) => setEditReference(event.target.value)} placeholder="PRE-FIS-MSC-2026-03/27-1456" autoFocus />
+              <small className="mt-1 block text-xs text-slate-500">Formato: PRE-FIS-CARRIER-AÑO-MM/AA-CORRELATIVO o PRE-FIS/CLIENTE-CARRIER-AÑO-MM/AA-CORRELATIVO.</small>
             </Field>
+            {editReference !== caso.id && (
+              <Field label="Motivo de modificación *">
+                <select className="input" value={editReferenceReason} onChange={(event) => setEditReferenceReason(event.target.value)}>
+                  <option value="">Seleccionar motivo</option>
+                  {REFERENCE_CHANGE_REASONS.map((reason) => <option key={reason}>{reason}</option>)}
+                </select>
+              </Field>
+            )}
             <Field label="Jurisdicción">
               <select className="input" value={editJurisdiccion} onChange={(event) => setEditJurisdiccion(event.target.value as Jurisdiccion | "")}>
                 <option value="">Sin definir</option>
-                <option value="LaHaya">La Haya · 1 año</option>
-                <option value="Hamburgo">Hamburgo · 2 años Chile/Perú</option>
+                <option value="LaHaya">La Haya · 1 año desde descarga</option>
+                <option value="Hamburgo">Hamburgo · 2 años desde descarga (Chile/Perú)</option>
               </select>
             </Field>
             <Field label={editDateType === "ETA" ? "ETA de descarga" : "Fecha de descarga efectiva"}>
@@ -1555,9 +1707,9 @@ function CaseDetailPage() {
         <CaseSummaryMetric
           label="Días sin movimiento"
           value={`${staleDays} días`}
-          detail={`Último cambio ${new Date(caso.ultimaActualizacion).toLocaleDateString("es-CL")}`}
+          detail={`Último movimiento ${new Date(lastMovement).toLocaleDateString("es-CL")}`}
           icon={<CalendarClock size={19} />}
-          tone={staleDays > INACTIVITY_ALERT_DAYS ? "warn" : "ok"}
+          tone={inactivity.active ? "warn" : "ok"}
         />
         <CaseSummaryMetric
           label="Recupero estimado"
@@ -1591,7 +1743,7 @@ function CaseDetailPage() {
       {showTransfer && (
         <Modal title="Confirmar traspaso" onClose={() => setShowTransfer(null)}>
           <p className="mb-4">
-            Revisa el informe antes de confirmar. El traspaso es simulado y bloqueará la edición de todo el expediente.
+            Revisa el informe antes de confirmar. El traspaso registra un cambio de estado; el expediente seguirá editable por el Handler responsable.
           </p>
           {caso.informeRevision && <ReviewReportContent report={caso.informeRevision} compact />}
           {caso.informeRevision && !caso.informeRevision.ready && (
@@ -1626,7 +1778,7 @@ function CaseDetailPage() {
           ["informe", "Informe", <FileCheck2 size={16} key="i" />],
           ["historial", "Historial", <History size={16} key="i" />],
           ["cartas", "Cartas", <FileText size={16} key="i" />]
-        ].filter(([, key]) => !isInspector || key === "Inspección").concat((usuario.role === "Inspector" || usuario.role === "Gerente") ? [["inspeccion", "Inspección", <ClipboardCheck size={16} key="i" />] as const] : []).map(([key, label, icon]) => (
+        ].filter(([, key]) => !isInspector || key === "Inspección").concat(INSPECTOR_EVOLUTION_ENABLED && (usuario.role === "Inspector" || usuario.role === "Gerente") ? [["inspeccion", "Inspección", <ClipboardCheck size={16} key="i" />] as const] : []).map(([key, label, icon]) => (
           <button key={String(key)} className={cx("tab", activeTab === key && "active")} onClick={() => changeTab(String(key))}>
             {icon} {label}
           </button>
@@ -1639,7 +1791,7 @@ function CaseDetailPage() {
       {!isInspector && tab === "informe" && <ReviewReportTab caso={caso} docs={caseDocs} calculo={calculo} canWrite={canMutateCase} />}
       {!isInspector && tab === "historial" && <HistoryTab events={events} />}
       {!isInspector && tab === "cartas" && <LettersTab caso={caso} docs={caseDocs} canWrite={canMutateCase} />}
-      {(isInspector || usuario.role === "Gerente") && activeTab === "inspeccion" && <InspectionTab caso={caso} canWrite={isInspector && !isTransferred} />}
+      {INSPECTOR_EVOLUTION_ENABLED && (isInspector || usuario.role === "Gerente") && activeTab === "inspeccion" && <InspectionTab caso={caso} canWrite={isInspector && !isTransferred} />}
     </AppShell>
   );
 }
@@ -1681,19 +1833,19 @@ function ExtractionValue({ label, value }: { label: string; value?: string }) {
 function LossProposalSummary({ proposal }: { proposal: ExtractedLossProposal }) {
   const methods = [
     {
-      label: "Embarque comparable",
+      label: "Embarque comparable · base bruta",
       reference: proposal.metodo1_liquidacionComparativa,
       actual: proposal.metodo1_liquidacionReal
     },
     {
-      label: "Reporte de mercado",
+      label: "Reporte de mercado · base bruta",
       reference: proposal.metodo2_valorReporteMercado,
       actual: proposal.metodo2_liquidacionReal
     },
     {
-      label: "Factura vs. venta destino",
+      label: "Factura vs. venta destino · venta neta",
       reference: proposal.metodo3_valorFactura,
-      actual: proposal.metodo3_ventaBrutaDestino
+      actual: proposal.metodo3_ventaNetaDestino ?? proposal.metodo3_ventaBrutaDestino
     }
   ];
   return (
@@ -1707,7 +1859,9 @@ function LossProposalSummary({ proposal }: { proposal: ExtractedLossProposal }) 
           <div key={method.label} className="loss-proposal-method">
             <span>{method.label}</span>
             <strong>{method.reference !== undefined && method.actual !== undefined ? currency(method.reference - method.actual, proposal.moneda) : "Sin datos"}</strong>
-            <small>{method.reference !== undefined ? `Base ${currency(method.reference, proposal.moneda)}` : "Base pendiente"}</small>
+            <small>{method.reference !== undefined && method.actual !== undefined
+              ? `Base ${currency(method.reference, proposal.moneda)} − ${currency(method.actual, proposal.moneda)}`
+              : "Valores brutos pendientes"}</small>
           </div>
         ))}
       </div>
@@ -1721,7 +1875,7 @@ function LossProposalSummary({ proposal }: { proposal: ExtractedLossProposal }) 
 }
 
 function DocumentsTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<typeof useDemoStore.getState>["documentos"]; canWrite: boolean }) {
-  const { prepareUpload, confirmUpload, removeDocument, updateCase } = useDemoStore();
+  const { prepareUpload, confirmUpload, removeDocument, updateCase, updateDocumentStatus, requestMissingDocuments, calculosPerdida } = useDemoStore();
   const [drafts, setDrafts] = useState<UploadDraft[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -1731,8 +1885,11 @@ function DocumentsTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<t
   const [reviewCause, setReviewCause] = useState("");
   const [reviewType, setReviewType] = useState("");
   const [extractionApplied, setExtractionApplied] = useState(false);
-  const completeness = documentCompleteness(docs);
-  const grouped = DOCUMENT_TYPES.map((type) => ({ type, docs: docs.filter((doc) => doc.tipoDocumento === type && doc.disponible) }));
+  const calculo = calculosPerdida.find((item) => item.casoId === caso.id);
+  const checklist = documentChecklist(caso, docs, calculo);
+  const requiredChecklist = checklist.filter((item) => item.required);
+  const missingChecklist = requiredChecklist.filter((item) => !isChecklistItemComplete(item));
+  const completedRequired = requiredChecklist.filter((item) => isChecklistItemComplete(item)).length;
   const addFiles = async (files: FileList | File[]) => {
     if (files.length === 0) return;
     setProcessingError("");
@@ -1775,6 +1932,7 @@ function DocumentsTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<t
     const patch: Partial<Caso> = {
       csClaimNo: extractionProposal.csClaimNo,
       assured: extractionProposal.assured,
+      consignee: extractionProposal.consignee,
       opponent: extractionProposal.opponent,
       vessel: extractionProposal.vessel,
       voyage: extractionProposal.voyage,
@@ -1789,6 +1947,7 @@ function DocumentsTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<t
       resumenCaso: reviewSummary.trim() || extractionProposal.resumenCaso,
       causaPotencial: reviewCause.trim() || extractionProposal.causaPotencial,
       fuentesCausa: extractionProposal.fuentesCausa,
+      conflictosExtraccion: extractionProposal.conflictosDetectados,
       propuestaPerdida: extractionProposal.propuestaPerdida
     };
     if (extractionProposal.causaPotencial?.toLowerCase().includes("térmica")) patch.causaDano = "Temperatura";
@@ -1850,6 +2009,11 @@ function DocumentsTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<t
                     </select>
                   </div>
                 ))}
+                {drafts.some((draft) => ["parcial", "no soportado", "requiere OCR"].includes(draft.estadoExtraccion || "")) && (
+                  <p className="notice" role="note">
+                    Algunos archivos requieren revisión técnica individual. El demo aísla ese archivo, conserva su estado y permite confirmar el resto; esta tolerancia es una decisión técnica interna y no un criterio contractual de aceptación.
+                  </p>
+                )}
                 <button
                   className="button-primary"
                   disabled={drafts.length === 0}
@@ -1873,6 +2037,7 @@ function DocumentsTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<t
                 </div>
                 <div className="extraction-grid">
                   <ExtractionValue label="Asegurado" value={extractionProposal.assured} />
+                  <ExtractionValue label="Consignatario" value={extractionProposal.consignee} />
                   <ExtractionValue label="Transportista / oponente" value={extractionProposal.opponent} />
                   <ExtractionValue label="Nave / viaje" value={[extractionProposal.vessel, extractionProposal.voyage].filter(Boolean).join(" / ")} />
                   <ExtractionValue label="Carga" value={extractionProposal.cargo} />
@@ -1883,6 +2048,11 @@ function DocumentsTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<t
                 </div>
                 {extractionProposal.referenciasDetectadas && extractionProposal.referenciasDetectadas.length > 1 && (
                   <div className="notice mt-3">Se detectaron varias referencias: {extractionProposal.referenciasDetectadas.join(", ")}. Revisa antes de aplicar.</div>
+                )}
+                {extractionProposal.conflictosDetectados && extractionProposal.conflictosDetectados.length > 0 && (
+                  <div className="notice mt-3" role="alert">
+                    <strong>Conflictos entre documentos:</strong> {extractionProposal.conflictosDetectados.join(" · ")} . El sistema no elige una versión por ti; el Handler debe resolverlos.
+                  </div>
                 )}
                 <Field label="Tipo de caso sugerido">
                   <input className="input" disabled={!canWrite} value={reviewType} onChange={(event) => setReviewType(event.target.value)} />
@@ -1906,6 +2076,11 @@ function DocumentsTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<t
             )}
           </>
         )}
+        {caso.conflictosExtraccion && caso.conflictosExtraccion.length > 0 && (
+          <div className="notice mt-4" role="alert">
+            <strong>Conflictos de extracción pendientes:</strong> {caso.conflictosExtraccion.join(" · ")} . Deben resolverse mediante revisión humana antes de usar esos datos en un cálculo o documento.
+          </div>
+        )}
         {docs.length === 0 && <EmptyState text="Carga al menos un documento para continuar el caso." />}
         <div className="mt-5 space-y-2">
           {docs.map((doc) => (
@@ -1913,7 +2088,9 @@ function DocumentsTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<t
               <FileText size={17} />
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium">{doc.nombreArchivo}</p>
-                <p className="text-xs text-slate-500">{doc.tipoDocumento} · {doc.pathMock}</p>
+                <p className="text-xs text-slate-500">
+                  {doc.tipoDocumento} · {doc.estadoExtraccion || (doc.ocrUsado ? "procesado con OCR" : "procesado")} · Confianza {doc.clasificacionConfianza || "Baja"} · {doc.pathMock}
+                </p>
               </div>
               {canWrite && (
                 <button
@@ -1933,31 +2110,56 @@ function DocumentsTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<t
       <div className="panel">
         <div className="panel-title">
           <h3>Checklist documental</h3>
-          <span>{completeness.completed}/{completeness.total}</span>
+          <span>{completedRequired}/{requiredChecklist.length} obligatorios</span>
         </div>
+        <p className="mb-4 text-xs text-slate-500">La matriz se ajusta al tipo de caso, la causa y el método de cálculo seleccionado. Los documentos no aplicables no bloquean el cierre.</p>
         <div className="checklist-grid">
-          {grouped.map((item) => (
-            <div key={item.type} className={cx("check-item", item.docs.length > 0 && "done")}>
-              {item.docs.length > 0 ? <Check size={16} /> : <AlertTriangle size={16} />}
+          {checklist.map((item) => {
+            const complete = isChecklistItemComplete(item);
+            return (
+            <div key={item.type} className={cx("check-item", complete && "done", !item.required && "optional")}>
+              {complete ? <Check size={16} /> : item.required ? <AlertTriangle size={16} /> : <HelpCircle size={16} />}
               <div>
-                <p>{item.type}</p>
-                {item.docs.length > 1 && <span>{item.docs.length} archivos</span>}
+                <div className="flex items-center gap-2">
+                  <p>{item.type}</p>
+                  {item.required && <span className="check-required">Obligatorio</span>}
+                </div>
+                <span>{DOCUMENT_STATUS_LABELS[item.status]}{item.documents.length > 1 ? ` · ${item.documents.length} archivos` : ""}</span>
+                <small>{item.reason}</small>
               </div>
+              <select
+                className="checklist-status-select"
+                aria-label={`Estado documental de ${item.type}`}
+                value={item.status}
+                disabled={!canWrite}
+                onChange={(event) => updateDocumentStatus(caso.id, item.type, event.target.value as DocumentStatus)}
+              >
+                {(Object.keys(DOCUMENT_STATUS_LABELS) as DocumentStatus[]).map((status) => (
+                  <option key={status} value={status}>{DOCUMENT_STATUS_LABELS[status]}</option>
+                ))}
+              </select>
             </div>
-          ))}
+            );
+          })}
         </div>
-        <MissingDocsText caso={caso} missing={completeness.missing} />
+        <MissingDocsText
+          caso={caso}
+          missing={missingChecklist}
+          canWrite={canWrite}
+          onRequest={() => requestMissingDocuments(caso.id, missingChecklist.map((item) => item.type))}
+        />
       </div>
     </section>
   );
 }
 
-function MissingDocsText({ caso, missing }: { caso: Caso; missing: DocumentType[] }) {
+function MissingDocsText({ caso, missing, canWrite, onRequest }: { caso: Caso; missing: ReturnType<typeof documentChecklist>; canWrite: boolean; onRequest: () => { ok: boolean; error?: string } }) {
   const [copyState, setCopyState] = useState<"idle" | "success" | "error">("idle");
+  const [requestState, setRequestState] = useState<"idle" | "success" | "error">("idle");
   const text =
     missing.length === 0
       ? `Caso ${caso.id}: documentación completa para revisión preclaim.`
-      : `Caso ${caso.id}: favor remitir los siguientes documentos pendientes para continuar el análisis preclaim:\n\n${missing.map((item) => `- ${item}`).join("\n")}`;
+      : `Caso ${caso.id}: favor remitir los siguientes documentos pendientes para continuar el análisis preclaim:\n\n${missing.map((item) => `- ${item.type}`).join("\n")}`;
   const copy = async () => {
     const copied = await copyText(text);
     setCopyState(copied ? "success" : "error");
@@ -1966,11 +2168,19 @@ function MissingDocsText({ caso, missing }: { caso: Caso; missing: DocumentType[
     <div className="mt-5 rounded-md border border-line bg-slate-50 p-4">
       <div className="mb-3 flex items-center justify-between">
         <strong>Texto para solicitar faltantes</strong>
-        <button className="button-secondary small" onClick={copy}>
-          <Copy size={15} /> {copyState === "success" ? "Copiado" : "Copiar"}
-        </button>
+        <div className="flex flex-wrap justify-end gap-2">
+          {canWrite && missing.length > 0 && (
+            <button className="button-secondary small" onClick={() => setRequestState(onRequest().ok ? "success" : "error")}>
+              <ClipboardCheck size={15} /> {requestState === "success" ? "Solicitados" : "Marcar solicitados"}
+            </button>
+          )}
+          <button className="button-secondary small" onClick={copy}>
+            <Copy size={15} /> {copyState === "success" ? "Copiado" : "Copiar"}
+          </button>
+        </div>
       </div>
       {copyState === "error" && <p className="form-error mb-3">No fue posible copiar automáticamente. Selecciona el texto y cópialo manualmente.</p>}
+      {requestState === "error" && <p className="form-error mb-3">No fue posible actualizar la solicitud documental.</p>}
       <pre className="whitespace-pre-wrap text-sm text-slate-700">{text}</pre>
     </div>
   );
@@ -2050,17 +2260,21 @@ function AnalysisTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<ty
 
 function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calculo?: CalculoPerdida; canWrite: boolean }) {
   const { saveCalculation, calculationMethods } = useDemoStore();
-  const [form, setForm] = useState<CalculoPerdida>(
-    calculo || {
-      casoId: caso.id,
-      moneda: "USD",
-      monedaOrigen: "USD",
-      tipoCambioFecha: new Date().toISOString().slice(0, 10),
-      rubrosAdicionales: [],
-      ventaAFirme: false,
-      updatedAt: new Date().toISOString()
-    }
-  );
+  const [form, setForm] = useState<CalculoPerdida>(() => calculo
+    ? {
+        ...calculo,
+        metodo3_ventaNetaDestino: calculo.metodo3_ventaNetaDestino ?? calculo.metodo3_ventaBrutaDestino
+      }
+    : {
+        casoId: caso.id,
+        moneda: "USD",
+        monedaOrigen: "USD",
+        tipoCambioFecha: caso.dateOfDischarge || new Date().toISOString().slice(0, 10),
+        tipoCambioFuente: "Xrate",
+        rubrosAdicionales: [],
+        ventaAFirme: false,
+        updatedAt: new Date().toISOString()
+      });
   const [error, setError] = useState("");
   const computed = useMemo(() => calculateLoss(form), [form]);
   const updateNumber = (key: keyof CalculoPerdida, value: string) => {
@@ -2084,14 +2298,18 @@ function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calculo?: Cal
       moneda: caso.propuestaPerdida?.moneda || current.moneda,
       monedaOrigen: caso.propuestaPerdida?.monedaOrigen || caso.propuestaPerdida?.moneda || current.monedaOrigen || current.moneda,
       tipoCambio: caso.propuestaPerdida?.tipoCambio,
-      tipoCambioFecha: caso.propuestaPerdida?.tipoCambioFecha || current.tipoCambioFecha || new Date().toISOString().slice(0, 10),
-      tipoCambioFuente: caso.propuestaPerdida?.tipoCambioFuente || current.tipoCambioFuente,
+      tipoCambioFecha: caso.propuestaPerdida?.tipoCambioFecha || current.tipoCambioFecha || caso.dateOfDischarge || new Date().toISOString().slice(0, 10),
+      tipoCambioFuente: caso.propuestaPerdida?.tipoCambioFuente || current.tipoCambioFuente || "Xrate",
       metodo1_liquidacionReal: caso.propuestaPerdida?.metodo1_liquidacionReal,
       metodo1_liquidacionComparativa: caso.propuestaPerdida?.metodo1_liquidacionComparativa,
       metodo2_valorReporteMercado: caso.propuestaPerdida?.metodo2_valorReporteMercado,
       metodo2_liquidacionReal: caso.propuestaPerdida?.metodo2_liquidacionReal,
       metodo3_valorFactura: caso.propuestaPerdida?.metodo3_valorFactura,
-      metodo3_ventaBrutaDestino: caso.propuestaPerdida?.metodo3_ventaBrutaDestino,
+      metodo3_ventaNetaDestino: caso.propuestaPerdida?.metodo3_ventaNetaDestino ?? caso.propuestaPerdida?.metodo3_ventaBrutaDestino,
+      cantidadAfectada: caso.propuestaPerdida?.cantidadAfectada,
+      unidadCalculo: caso.propuestaPerdida?.unidadCalculo,
+      metodo1_cantidadReferencia: caso.propuestaPerdida?.metodo1_cantidadReferencia,
+      metodo2_cantidadReferencia: caso.propuestaPerdida?.metodo2_cantidadReferencia,
       rubrosAdicionales: caso.propuestaPerdida?.rubrosAdicionales || [],
       fuentes: caso.propuestaPerdida?.fuentes || [],
       metodoSeleccionado: undefined,
@@ -2099,9 +2317,9 @@ function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calculo?: Cal
     }));
   };
   const methods = [
-    { id: "1" as const, fallbackTitle: "Método 1 · Embarque comparable", result: computed.metodo1_resultado, fallbackFormula: "liquidación comparativa - liquidación real" },
-    { id: "2" as const, fallbackTitle: "Método 2 · Reporte de mercado", result: computed.metodo2_resultado, fallbackFormula: "valor reporte mercado - liquidación real" },
-    { id: "3" as const, fallbackTitle: "Método 3 · Factura vs. venta", result: computed.metodo3_resultado, fallbackFormula: "valor factura exportación - venta destino" }
+    { id: "1" as const, fallbackTitle: "Método 1 · Embarque comparable", result: computed.metodo1_resultado, fallbackFormula: "liquidación bruta comparable - liquidación bruta real" },
+    { id: "2" as const, fallbackTitle: "Método 2 · Reporte de mercado", result: computed.metodo2_resultado, fallbackFormula: "valor bruto reporte de mercado - liquidación bruta real" },
+    { id: "3" as const, fallbackTitle: "Método 3 · Factura vs. venta", result: computed.metodo3_resultado, fallbackFormula: "valor factura exportación - venta neta destino" }
   ].map((method) => {
     const config = calculationMethods.find((item) => item.id === method.id);
     return {
@@ -2123,7 +2341,7 @@ function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calculo?: Cal
         </div>
         {!canWrite && <ReadonlyBanner text={caso.estado.includes("Traspasado") ? "El caso fue traspasado; la edición de todo el expediente está bloqueada." : undefined} />}
         <div className="notice">
-          Cada resultado es una recomendación preliminar. Antes de guardar, verifica los valores y el documento que sustenta el método elegido.
+          Cada resultado es una recomendación preliminar. En los métodos 1 y 2 ingresa valores brutos, no netos. El método 3 compara la factura de exportación con la venta neta consolidada de destino. Si el resultado es negativo, se conserva para auditoría y el monto reclamable queda en cero.
         </div>
         <div className="analysis-card">
           <strong>Conclusión de causa de daño</strong>
@@ -2151,15 +2369,21 @@ function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calculo?: Cal
           <Field label="Moneda de origen">
             <select className="input" disabled={!canWrite} value={form.monedaOrigen || form.moneda} onChange={(event) => setForm((current) => ({ ...current, monedaOrigen: event.target.value as CurrencyCode }))}>
               <option value="USD">USD · dólar estadounidense</option>
-              <option value="CLP">CLP · peso chileno</option>
               <option value="EUR">EUR · euro</option>
+              <option value="CLP">CLP · peso chileno</option>
+              <option value="CNY">CNY · yuan chino</option>
+              <option value="HKD">HKD · dólar hongkonés</option>
+              <option value="GBP">GBP · libra esterlina</option>
             </select>
           </Field>
           <Field label="Moneda de cálculo">
             <select className="input" disabled={!canWrite} value={form.moneda} onChange={(event) => setForm((current) => ({ ...current, moneda: event.target.value as CurrencyCode }))}>
               <option value="USD">USD · dólar estadounidense</option>
-              <option value="CLP">CLP · peso chileno</option>
               <option value="EUR">EUR · euro</option>
+              <option value="CLP">CLP · peso chileno</option>
+              <option value="CNY">CNY · yuan chino</option>
+              <option value="HKD">HKD · dólar hongkonés</option>
+              <option value="GBP">GBP · libra esterlina</option>
             </select>
           </Field>
           <label className="checkbox-field">
@@ -2174,17 +2398,32 @@ function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calculo?: Cal
                 <input className="input" disabled={!canWrite} min="0" step="any" type="number" value={form.tipoCambio || ""} onChange={(event) => updateNumber("tipoCambio", event.target.value)} placeholder="Ej. 0,0011" />
               </Field>
               <Field label="Fecha del tipo de cambio">
-                <input className="input" disabled={!canWrite} type="date" value={form.tipoCambioFecha || ""} onChange={(event) => setForm((current) => ({ ...current, tipoCambioFecha: event.target.value }))} />
+                <input className="input" disabled={!canWrite || Boolean(caso.dateOfDischarge)} readOnly={Boolean(caso.dateOfDischarge)} type="date" value={caso.dateOfDischarge || form.tipoCambioFecha || ""} onChange={(event) => setForm((current) => ({ ...current, tipoCambioFecha: event.target.value }))} />
               </Field>
-              <Field label="Fuente o criterio">
-                <input className="input" disabled={!canWrite} value={form.tipoCambioFuente || ""} onChange={(event) => setForm((current) => ({ ...current, tipoCambioFuente: event.target.value }))} placeholder="Ej. Banco Central / tasa configurada" />
+              <Field label="Fuente del tipo de cambio">
+                <input className="input" disabled={!canWrite} value={form.tipoCambioFuente || ""} onChange={(event) => setForm((current) => ({ ...current, tipoCambioFuente: event.target.value }))} placeholder="Xrate o tasa manual documentada" />
               </Field>
             </div>
-            <p className="notice mt-3">Los valores de respaldo se ingresan en {form.monedaOrigen} y los resultados se muestran en {form.moneda}. La conversión se aplica antes de comparar.</p>
+            <p className="notice mt-3">Los valores de respaldo se ingresan en {form.monedaOrigen} y los resultados se muestran en {form.moneda}. La conversión se aplica antes de comparar, en la dirección 1 {form.monedaOrigen} = X {form.moneda}. La fecha aplicable es la descarga del contenedor y los resultados se redondean a 2 decimales. La fuente oficial configurada es Xrate; también se permite una tasa manual documentada.</p>
           </div>
         )}
         {form.monedaOrigen === form.moneda && <p className="notice mt-3">Los valores de respaldo y el resultado están expresados en {form.moneda}; no se requiere conversión.</p>}
         {form.fuentes && form.fuentes.length > 0 && <p className="history-source-note">Valores cargados desde: {form.fuentes.join(", ")}</p>}
+      </div>
+
+      <div className="panel">
+        <div className="panel-title">
+          <h3>Unidad y cantidad de cálculo</h3>
+          <span>Normalización opcional</span>
+        </div>
+        <p className="notice mb-4">Cuando el embarque comparable o el reporte de mercado tiene un volumen distinto, indica la cantidad de referencia. El sistema llevará el valor unitario a la cantidad afectada antes de comparar.</p>
+        <div className="grid gap-4 md:grid-cols-3">
+          <NumberField label="Cantidad afectada" disabled={!canWrite} value={form.cantidadAfectada} onChange={(value) => updateNumber("cantidadAfectada", value)} />
+          <Field label="Unidad de cálculo">
+            <input className="input" disabled={!canWrite} value={form.unidadCalculo || ""} onChange={(event) => setForm((current) => ({ ...current, unidadCalculo: event.target.value }))} placeholder="Cajas, kg, pallets..." />
+          </Field>
+          <div className="notice self-end">La unidad debe ser la misma para ambos valores comparados.</div>
+        </div>
       </div>
 
       {form.ventaAFirme ? (
@@ -2192,22 +2431,24 @@ function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calculo?: Cal
           <Field label="Valor nota de crédito">
             <input className="input" disabled={!canWrite} type="number" value={form.notaCreditoValor || ""} onChange={(event) => updateNumber("notaCreditoValor", event.target.value)} placeholder={`Monto en ${form.monedaOrigen || form.moneda}`} />
           </Field>
-          <FinalClaim value={computed.montoFinalReclamo} moneda={form.moneda} />
+            <FinalClaim value={computed.montoFinalReclamo} signedValue={computed.resultadoSeleccionadoFirmado} moneda={form.moneda} />
         </div>
       ) : (
         <>
           <div className="grid gap-5 lg:grid-cols-3">
             <MethodInputs title={calculationMethods.find((method) => method.id === "1")?.title || "Método 1 · Embarque comparable"}>
-              <NumberField label={`Liquidación real (${form.monedaOrigen || form.moneda})`} disabled={!canWrite} value={form.metodo1_liquidacionReal} onChange={(value) => updateNumber("metodo1_liquidacionReal", value)} />
-              <NumberField label={`Liquidación comparativa (${form.monedaOrigen || form.moneda})`} disabled={!canWrite} value={form.metodo1_liquidacionComparativa} onChange={(value) => updateNumber("metodo1_liquidacionComparativa", value)} />
+              <NumberField label={`Cantidad embarque comparable (${form.unidadCalculo || "unidad"})`} disabled={!canWrite} value={form.metodo1_cantidadReferencia} onChange={(value) => updateNumber("metodo1_cantidadReferencia", value)} />
+              <NumberField label={`Liquidación bruta real (${form.monedaOrigen || form.moneda})`} disabled={!canWrite} value={form.metodo1_liquidacionReal} onChange={(value) => updateNumber("metodo1_liquidacionReal", value)} />
+              <NumberField label={`Liquidación bruta comparable (${form.monedaOrigen || form.moneda})`} disabled={!canWrite} value={form.metodo1_liquidacionComparativa} onChange={(value) => updateNumber("metodo1_liquidacionComparativa", value)} />
             </MethodInputs>
             <MethodInputs title={calculationMethods.find((method) => method.id === "2")?.title || "Método 2 · Reporte de mercado"}>
-              <NumberField label={`Valor reporte mercado (${form.monedaOrigen || form.moneda})`} disabled={!canWrite} value={form.metodo2_valorReporteMercado} onChange={(value) => updateNumber("metodo2_valorReporteMercado", value)} />
-              <NumberField label={`Liquidación real (${form.monedaOrigen || form.moneda})`} disabled={!canWrite} value={form.metodo2_liquidacionReal} onChange={(value) => updateNumber("metodo2_liquidacionReal", value)} />
+              <NumberField label={`Cantidad reporte de mercado (${form.unidadCalculo || "unidad"})`} disabled={!canWrite} value={form.metodo2_cantidadReferencia} onChange={(value) => updateNumber("metodo2_cantidadReferencia", value)} />
+              <NumberField label={`Valor bruto reporte de mercado (${form.monedaOrigen || form.moneda})`} disabled={!canWrite} value={form.metodo2_valorReporteMercado} onChange={(value) => updateNumber("metodo2_valorReporteMercado", value)} />
+              <NumberField label={`Liquidación bruta real (${form.monedaOrigen || form.moneda})`} disabled={!canWrite} value={form.metodo2_liquidacionReal} onChange={(value) => updateNumber("metodo2_liquidacionReal", value)} />
             </MethodInputs>
             <MethodInputs title={calculationMethods.find((method) => method.id === "3")?.title || "Método 3 · Factura vs. venta"}>
               <NumberField label={`Valor factura exportación (${form.monedaOrigen || form.moneda})`} disabled={!canWrite} value={form.metodo3_valorFactura} onChange={(value) => updateNumber("metodo3_valorFactura", value)} />
-              <NumberField label={`Venta bruta destino (${form.monedaOrigen || form.moneda})`} disabled={!canWrite} value={form.metodo3_ventaBrutaDestino} onChange={(value) => updateNumber("metodo3_ventaBrutaDestino", value)} />
+              <NumberField label={`Venta neta destino (${form.monedaOrigen || form.moneda})`} disabled={!canWrite} value={form.metodo3_ventaNetaDestino} onChange={(value) => updateNumber("metodo3_ventaNetaDestino", value)} />
             </MethodInputs>
           </div>
           <div className="panel">
@@ -2261,7 +2502,7 @@ function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calculo?: Cal
             <textarea className="input min-h-28" disabled={!canWrite} value={form.justificacionSeleccion || ""} onChange={(event) => setForm((current) => ({ ...current, justificacionSeleccion: event.target.value }))} />
           </Field>
         )}
-        <FinalClaim value={computed.montoFinalReclamo} moneda={form.moneda} />
+        <FinalClaim value={computed.montoFinalReclamo} signedValue={computed.resultadoSeleccionadoFirmado} moneda={form.moneda} />
         {canWrite && (
           <button className="button-primary mt-4" type="submit">
             <Save size={17} /> Guardar cálculo auditable
@@ -2289,11 +2530,12 @@ function NumberField({ label, value, disabled, onChange }: { label: string; valu
   );
 }
 
-function FinalClaim({ value, moneda }: { value?: number; moneda: CurrencyCode }) {
+function FinalClaim({ value, signedValue, moneda }: { value?: number; signedValue?: number; moneda: CurrencyCode }) {
   return (
     <div className="final-claim">
       <span>Monto final a reclamar</span>
       <strong>{currency(value, moneda)}</strong>
+      {signedValue !== undefined && signedValue < 0 && <small>Resultado matemático: {currency(signedValue, moneda)} · Sin pérdida compensable</small>}
     </div>
   );
 }
@@ -2378,6 +2620,8 @@ function ReviewReportTab({
 function ReviewReportContent({ report, compact = false }: { report: ReviewReport; compact?: boolean }) {
   const availableCount = report.availableDocuments.length;
   const pendingCount = report.pendingActions.length;
+  const closureChecklist = report.closureChecklist || [];
+  const completedGates = closureChecklist.filter((gate) => gate.status === "Cumplido").length;
   return (
     <section className={cx("review-report", compact && "compact")}>
       <div className="review-report-heading">
@@ -2400,6 +2644,33 @@ function ReviewReportContent({ report, compact = false }: { report: ReviewReport
         <div><span>Acciones pendientes</span><strong>{pendingCount}</strong></div>
         <div><span>Mérito preliminar</span><strong>{report.preliminaryMerit || "Pendiente"}</strong></div>
       </div>
+
+      {!compact && (
+        <section className="review-gate-panel">
+          <div className="panel-title">
+            <div>
+              <h4>Checklist de cierre local</h4>
+              <p>Las mismas guardas aplican al traspaso extrajudicial a FIS y al judicial a Lawgistic.</p>
+            </div>
+            <span>{completedGates}/{closureChecklist.length || 5} cumplidas</span>
+          </div>
+          {closureChecklist.length > 0 ? (
+            <div className="review-gate-list">
+              {closureChecklist.map((gate) => (
+                <div className="review-gate-row" key={gate.id}>
+                  <div>
+                    <strong>{gate.label}</strong>
+                    <small>{gate.detail}</small>
+                  </div>
+                  <StatusPill label={gate.status} tone={gate.status === "Cumplido" ? "ok" : "warn"} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="review-gate-empty">Regenera el informe para consultar el checklist de cierre actualizado.</p>
+          )}
+        </section>
+      )}
 
       {!compact && (
         <div className="review-report-grid">
@@ -2543,7 +2814,7 @@ function InspectionTab({ caso, canWrite }: { caso: Caso; canWrite: boolean }) {
 }
 
 function LettersTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<typeof useDemoStore.getState>["documentos"]; canWrite: boolean }) {
-  const { registerLetter, calculosPerdida, templateConfigs } = useDemoStore();
+  const { approveLetter, registerLetter, calculosPerdida, templateConfigs } = useDemoStore();
   const calculo = calculosPerdida.find((item) => item.casoId === caso.id);
   const configuredTemplates = LETTER_TEMPLATES.map((item) => getLetterTemplate(item.id, templateConfigs));
   const firstActiveTemplate = configuredTemplates.find((item) => item.active) || configuredTemplates[0];
@@ -2553,27 +2824,80 @@ function LettersTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<typ
   const conflicts = templateConflicts({ caso, docs, calculo });
   const context = { caso, docs, calculo };
   const [copyState, setCopyState] = useState<"idle" | "success" | "error">("idle");
+  const [approvalNotice, setApprovalNotice] = useState("");
+  const templateVersion = templateConfigs.find((item) => item.id === template.id)?.version || 1;
+  const fingerprint = templateContentFingerprint(text);
+  const approval = caso.cartasAprobadas?.find(
+    (item) => item.templateId === template.id && item.version === templateVersion && item.fingerprint === fingerprint
+  );
+  const pendingFields = templateHasPendingFields(text);
+  const lockedFieldsMissing = templateLockedTokenIssues(text, template.lockedFields);
+  const requiredFieldsMissing = templateRequiredTokenIssues(text, template.requiredFields);
+  const missingAttachments = templateMissingAttachments(docs, template.requiredAttachments);
+  const approved = Boolean(approval);
+  const approvalBlockers = [
+    ...conflicts,
+    pendingFields ? "Completa los campos marcados como [PENDIENTE COMPLETAR] antes de aprobar." : "",
+    requiredFieldsMissing.length > 0 ? `Faltan campos obligatorios del template: ${requiredFieldsMissing.map((field) => `{{${field}}}`).join(", ")}.` : "",
+    missingAttachments.length > 0 ? `Faltan respaldos para emitir: ${missingAttachments.join(", ")}.` : "",
+    lockedFieldsMissing.length > 0 ? `Faltan campos protegidos del template: ${lockedFieldsMissing.map((field) => `{{${field}}}`).join(", ")}.` : "",
+    !template.active ? "El template está inactivo en el mantenedor." : ""
+  ].filter(Boolean);
+  const canApprove = canWrite && approvalBlockers.length === 0;
 
   const changeTemplate = (nextId: LetterTemplateId) => {
     const nextTemplate = getLetterTemplate(nextId, templateConfigs);
     if (!nextTemplate.active) return;
     setTemplateId(nextId);
     setText(buildLetterTemplate(nextId, context, templateConfigs));
+    setCopyState("idle");
+    setApprovalNotice("");
   };
-  const resetTemplate = () => setText(buildLetterTemplate(templateId, context, templateConfigs));
+  const resetTemplate = () => {
+    setText(buildLetterTemplate(templateId, context, templateConfigs));
+    setCopyState("idle");
+    setApprovalNotice("");
+  };
+  const editText = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    setText(event.target.value);
+    setCopyState("idle");
+    setApprovalNotice("");
+  };
+  const approve = () => {
+    if (!canApprove) {
+      setApprovalNotice("No se puede aprobar: completa la revisión requerida antes de emitir la carta.");
+      return;
+    }
+    const result = approveLetter(caso.id, { templateId: template.id, version: templateVersion, fingerprint });
+    setApprovalNotice(result.ok ? "Carta aprobada. Ahora puedes copiarla, imprimirla o descargarla." : result.error || "No fue posible aprobar la carta.");
+  };
+  const requireApproval = () => {
+    if (approved) return true;
+    setApprovalNotice("La carta debe ser aprobada por el handler responsable antes de emitirla.");
+    return false;
+  };
   const copy = async () => {
+    if (!requireApproval()) return;
     const copied = await copyText(text);
     setCopyState(copied ? "success" : "error");
-    if (copied) registerLetter(caso.id, `${template.title} copiado al portapapeles.`);
+    if (copied) registerLetter(caso.id, template.id, fingerprint, `${template.title} copiado al portapapeles.`);
   };
   const download = () => {
+    if (!requireApproval()) return;
     const safeId = caso.id.replace(/[^\w-]+/g, "-");
     downloadHtmlFile(`${safeId}_${template.shortTitle.replace(/\s+/g, "_").toLowerCase()}.html`, buildPrintableHtml(template, text));
-    registerLetter(caso.id, `${template.title} descargado como documento imprimible.`);
+    registerLetter(caso.id, template.id, fingerprint, `${template.title} descargado como documento imprimible.`);
+  };
+  const downloadWord = () => {
+    if (!requireApproval()) return;
+    const safeId = caso.id.replace(/[^\w-]+/g, "-");
+    downloadWordFile(`${safeId}_${template.shortTitle.replace(/\s+/g, "_").toLowerCase()}.doc`, buildPrintableHtml(template, text));
+    registerLetter(caso.id, template.id, fingerprint, `${template.title} descargado en formato Word compatible.`);
   };
   const print = () => {
+    if (!requireApproval()) return;
     if (printHtmlFile(buildPrintableHtml(template, text))) {
-      registerLetter(caso.id, `${template.title} enviado a impresión / guardado como PDF.`);
+      registerLetter(caso.id, template.id, fingerprint, `${template.title} enviado a impresión / guardado como PDF.`);
     }
   };
   return (
@@ -2593,18 +2917,35 @@ function LettersTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<typ
           </select>
         </Field>
         <p className="template-description">{template.description}</p>
+        {template.id === "claim-notice" && <p className="notice" role="note">Claim Notice y carta de notificación corresponden al mismo documento. Debe existir además la correspondencia de envío a la naviera en formato PDF, conservada en el expediente.</p>}
         {!template.active && <div className="notice template-inactive">Este template está inactivo en el mantenedor y no puede seleccionarse para nuevas generaciones.</div>}
         <div className="template-fields">
           <span>Campos parametrizados</span>
           <div>{template.fields.map((field) => <small key={field}>{field}</small>)}</div>
         </div>
-        {conflicts.length > 0 && (
+        <div className="template-rules-grid">
+          <div><span>Campos obligatorios</span><strong>{template.requiredFields?.join(", ") || "No definidos"}</strong></div>
+          <div><span>Campos editables</span><strong>{template.manualEditableFields?.join(", ") || "Revisión en contenido"}</strong></div>
+          <div><span>Adjuntos requeridos</span><strong>{template.requiredAttachments?.join(", ") || "No definidos"}</strong></div>
+          <div><span>Firma</span><strong>{template.signatureRule || "No definida"}</strong></div>
+        </div>
+        {approvalBlockers.length > 0 && (
           <div className="form-error template-conflicts">
             <strong>Revisión requerida</strong>
-            {conflicts.map((conflict) => <span key={conflict}>{conflict}</span>)}
-            <small>El sistema usa el primer valor detectado hasta que el handler lo corrija.</small>
+            {approvalBlockers.map((blocker) => <span key={blocker}>{blocker}</span>)}
+            {conflicts.length > 0 && <small>El sistema usa el primer valor detectado hasta que el handler lo corrija.</small>}
           </div>
         )}
+        <div className="template-approval-bar">
+          <div>
+            <span className="template-approval-label">Estado de emisión</span>
+            <div className="template-approval-status">
+              <StatusPill label={approved ? "Aprobada" : "Pendiente de aprobación"} tone={approved ? "ok" : "warn"} />
+              {approved && approval && <small>Por {approval.approvedBy} · {new Date(approval.approvedAt).toLocaleString("es-CL")}</small>}
+            </div>
+          </div>
+          {canWrite && <button type="button" className="button-secondary" disabled={!canApprove || approved} onClick={approve}><ShieldCheck size={17} /> {approved ? "Carta aprobada" : "Aprobar carta"}</button>}
+        </div>
         <div className="template-editor-heading">
           <div>
             <strong>Contenido editable</strong>
@@ -2612,12 +2953,14 @@ function LettersTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<typ
           </div>
           {canWrite && <button type="button" className="button-secondary small" onClick={resetTemplate}><RefreshCcw size={15} /> Restablecer base</button>}
         </div>
-        <textarea className="input template-editor" disabled={!canWrite} value={text} onChange={(event) => setText(event.target.value)} />
+        <textarea className="input template-editor" disabled={!canWrite} value={text} onChange={editText} />
         {copyState === "error" && <p className="form-error mt-3">No fue posible copiar automáticamente. Selecciona el contenido y cópialo manualmente.</p>}
+        {approvalNotice && <p className={cx("notice", "mt-3", approvalNotice.startsWith("Carta aprobada") ? "template-approval-notice" : "form-error")}>{approvalNotice}</p>}
         <div className="mt-4 flex flex-wrap justify-end gap-3">
-          <button className="button-secondary" type="button" onClick={copy}><Copy size={17} /> {copyState === "success" ? "Copiado" : "Copiar"}</button>
-          <button className="button-secondary" type="button" onClick={print}><FileCheck2 size={17} /> Imprimir / PDF</button>
-          <button className="button-primary" type="button" onClick={download}><Download size={17} /> Descargar documento</button>
+          <button className="button-secondary" type="button" disabled={!approved} onClick={copy} title={!approved ? "Aprueba la carta antes de emitirla" : undefined}><Copy size={17} /> {copyState === "success" ? "Copiado" : "Copiar"}</button>
+          <button className="button-secondary" type="button" disabled={!approved} onClick={print} title={!approved ? "Aprueba la carta antes de emitirla" : undefined}><FileCheck2 size={17} /> Imprimir / PDF</button>
+          <button className="button-secondary" type="button" disabled={!approved || !template.downloadFormats?.includes("word")} onClick={downloadWord} title={!approved ? "Aprueba la carta antes de emitirla" : undefined}><FileText size={17} /> Descargar Word</button>
+          <button className="button-primary" type="button" disabled={!approved} onClick={download} title={!approved ? "Aprueba la carta antes de emitirla" : undefined}><Download size={17} /> Descargar documento</button>
         </div>
       </div>
       <div className="panel template-preview-panel">
@@ -2628,24 +2971,25 @@ function LettersTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<typ
           </div>
           <span>{template.shortTitle}</span>
         </div>
-        <TemplatePreview text={text} />
+        <TemplatePreview text={text} template={template} />
       </div>
     </section>
   );
 }
 
-function TemplatePreview({ text }: { text: string }) {
+function TemplatePreview({ text, template }: { text: string; template: ReturnType<typeof getLetterTemplate> }) {
   const blocks = text.split(/\n{2,}/);
   return (
     <article className="template-preview-sheet">
       <header className="template-preview-brand">
         <span className="template-preview-mark">IP</span>
-        <span><strong>FRUIT INSURANCE SERVICES</strong><small>CHILE · EST. 2015</small></span>
+        <span><strong>{template.logoText || "FRUIT INSURANCE SERVICES"}</strong><small>CHILE · EST. 2015</small></span>
       </header>
+      {template.headerText && <div className="template-preview-header">{template.headerText}</div>}
       <div className="template-preview-copy">
         {blocks.map((block, index) => <p key={`${index}-${block.slice(0, 20)}`}>{block.split("\n").map((line, lineIndex) => <span key={`${lineIndex}-${line.slice(0, 12)}`}>{line}{lineIndex < block.split("\n").length - 1 && <br />}</span>)}</p>)}
       </div>
-      <footer>Intervent Preclaim · Documento generado para revisión humana</footer>
+      <footer>{template.footerText || "Intervent Preclaim · Documento generado para revisión humana"}</footer>
     </article>
   );
 }
@@ -2787,6 +3131,13 @@ function TemplateMaintainer({ canEdit }: { canEdit: boolean }) {
     setDraft((current) => current ? { ...current, ...patch } : current);
     setNotice("");
   };
+  const splitList = (value: string) => value.split(",").map((item) => item.trim()).filter(Boolean);
+  const toggleFormat = (format: TemplateDownloadFormat, checked: boolean) => {
+    const formats = new Set(draft?.downloadFormats || []);
+    if (checked) formats.add(format);
+    else formats.delete(format);
+    updateDraft({ downloadFormats: [...formats] as TemplateDownloadFormat[] });
+  };
 
   const save = () => {
     if (!draft) return;
@@ -2807,7 +3158,24 @@ function TemplateMaintainer({ canEdit }: { canEdit: boolean }) {
       description: draft.description.trim(),
       language: draft.language.trim() || "English",
       baseContent: draft.baseContent,
-      active: draft.active
+      active: draft.active,
+      officialName: draft.officialName?.trim() || draft.title.trim(),
+      effectiveDate: draft.effectiveDate || undefined,
+      logoText: draft.logoText?.trim() || "FRUIT INSURANCE SERVICES CHILE",
+      headerText: draft.headerText?.trim() || undefined,
+      footerText: draft.footerText?.trim() || undefined,
+      sender: draft.sender?.trim() || undefined,
+      recipient: draft.recipient?.trim() || undefined,
+      legalText: draft.legalText?.trim() || undefined,
+      requiredFields: draft.requiredFields || [],
+      optionalFields: draft.optionalFields || [],
+      manualEditableFields: draft.manualEditableFields || [],
+      lockedFields: draft.lockedFields || [],
+      signatureRule: draft.signatureRule?.trim() || undefined,
+      authorizedSigner: draft.authorizedSigner?.trim() || undefined,
+      downloadFormats: draft.downloadFormats?.length ? draft.downloadFormats : ["pdf", "word"],
+      requiresSerialNumber: Boolean(draft.requiresSerialNumber),
+      requiredAttachments: draft.requiredAttachments || []
     });
     setError("");
     setNotice("Template base actualizado. La próxima generación usará esta versión.");
@@ -2877,6 +3245,66 @@ function TemplateMaintainer({ canEdit }: { canEdit: boolean }) {
             <Field label="Descripción">
               <input className="input" disabled={!canEdit} value={draft.description} onChange={(event) => updateDraft({ description: event.target.value })} />
             </Field>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="Nombre oficial">
+                <input className="input" disabled={!canEdit} value={draft.officialName || ""} onChange={(event) => updateDraft({ officialName: event.target.value })} />
+              </Field>
+              <Field label="Fecha de vigencia">
+                <input className="input" disabled={!canEdit} type="date" value={draft.effectiveDate || ""} onChange={(event) => updateDraft({ effectiveDate: event.target.value })} />
+              </Field>
+              <Field label="Encabezado">
+                <input className="input" disabled={!canEdit} value={draft.headerText || ""} onChange={(event) => updateDraft({ headerText: event.target.value })} />
+              </Field>
+              <Field label="Pie de documento">
+                <input className="input" disabled={!canEdit} value={draft.footerText || ""} onChange={(event) => updateDraft({ footerText: event.target.value })} />
+              </Field>
+              <Field label="Remitente">
+                <input className="input" disabled={!canEdit} value={draft.sender || ""} onChange={(event) => updateDraft({ sender: event.target.value })} />
+              </Field>
+              <Field label="Destinatario">
+                <input className="input" disabled={!canEdit} value={draft.recipient || ""} onChange={(event) => updateDraft({ recipient: event.target.value })} />
+              </Field>
+              <Field label="Texto legal">
+                <textarea className="input min-h-20" disabled={!canEdit} value={draft.legalText || ""} onChange={(event) => updateDraft({ legalText: event.target.value })} />
+              </Field>
+              <Field label="Regla de firma">
+                <textarea className="input min-h-20" disabled={!canEdit} value={draft.signatureRule || ""} onChange={(event) => updateDraft({ signatureRule: event.target.value })} />
+              </Field>
+              <Field label="Firmante autorizado">
+                <input className="input" disabled={!canEdit} value={draft.authorizedSigner || ""} onChange={(event) => updateDraft({ authorizedSigner: event.target.value })} />
+              </Field>
+              <Field label="Logo / marca">
+                <input className="input" disabled={!canEdit} value={draft.logoText || ""} onChange={(event) => updateDraft({ logoText: event.target.value })} />
+              </Field>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="Campos obligatorios (tokens separados por coma)">
+                <input className="input" disabled={!canEdit} value={(draft.requiredFields || []).join(", ")} onChange={(event) => updateDraft({ requiredFields: splitList(event.target.value) })} />
+              </Field>
+              <Field label="Campos opcionales (tokens separados por coma)">
+                <input className="input" disabled={!canEdit} value={(draft.optionalFields || []).join(", ")} onChange={(event) => updateDraft({ optionalFields: splitList(event.target.value) })} />
+              </Field>
+              <Field label="Campos editables manualmente">
+                <input className="input" disabled={!canEdit} value={(draft.manualEditableFields || []).join(", ")} onChange={(event) => updateDraft({ manualEditableFields: splitList(event.target.value) })} />
+              </Field>
+              <Field label="Campos bloqueados">
+                <input className="input" disabled={!canEdit} value={(draft.lockedFields || []).join(", ")} onChange={(event) => updateDraft({ lockedFields: splitList(event.target.value) })} />
+              </Field>
+              <Field label="Adjuntos requeridos">
+                <input className="input" disabled={!canEdit} value={(draft.requiredAttachments || []).join(", ")} onChange={(event) => updateDraft({ requiredAttachments: splitList(event.target.value) })} />
+              </Field>
+              <div className="template-format-box">
+                <span>Formatos de descarga</span>
+                <div className="flex flex-wrap gap-3">
+                  {(["pdf", "word"] as TemplateDownloadFormat[]).map((format) => (
+                    <label className="checkbox-field" key={format}>
+                      <input type="checkbox" disabled={!canEdit} checked={draft.downloadFormats?.includes(format) || false} onChange={(event) => toggleFormat(format, event.target.checked)} />
+                      {format === "pdf" ? "PDF / impresión" : "Word compatible"}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
             <div className="template-token-box">
               <span>Campos disponibles</span>
               <div>{TEMPLATE_TOKENS.map((token) => <code key={token}>{`{{${token}}}`}</code>)}</div>
@@ -2902,7 +3330,7 @@ function ManualPage() {
     {
       title: "1. Selector de rol",
       body:
-        "Permite entrar como Handler, Gerente, CEO o Inspector. El rol cambia los permisos y el alcance de datos: Handler ve sus casos; Gerente y CEO ven todo el portafolio; Inspector solo ve los casos que le fueron asignados."
+        "Permite entrar como Handler, Gerente o CEO. El rol cambia los permisos y el alcance de datos: Handler ve y opera sus casos; Gerente supervisa el portafolio y configura los mantenedores; CEO revisa indicadores en modo lectura. El perfil Inspector y la Carta JSI están fuera de Fase 1 y requieren una evolución aprobada."
     },
     {
       title: "2. Dashboard",
@@ -2917,12 +3345,12 @@ function ManualPage() {
     {
       title: "4. Nuevo caso",
       body:
-        "Puedes iniciar el caso cargando una carpeta documental o completando el formulario. La carpeta propone referencia, handler, datos del embarque, tipo de caso, resumen y causa; el handler revisa y corrige antes de guardar."
+        "En Fase 1 puedes iniciar el caso cargando una carpeta documental ya descargada o completando el formulario. La solución no descarga información directamente desde plataformas ni lee correo, API o robots externos. La carpeta propone referencia, handler, datos del embarque, tipo de caso, resumen y causa; el handler revisa y corrige antes de guardar. La referencia automática sigue el formato PRE-FIS-CARRIER-AÑO-MM/AA-CORRELATIVO o PRE-FIS/CLIENTE-CARRIER-AÑO-MM/AA-CORRELATIVO. Las referencias antiguas se conservan y los cambios requieren motivo."
     },
     {
       title: "5. Documentos y checklist",
       body:
-        "Permite cargar múltiples archivos o una carpeta, leer contenido compatible, ejecutar OCR bajo demanda para PDFs escaneados, sugerir tipo documental y extraer datos para revisión humana. La carga de una carpeta completa evita duplicar entradas ya presentes en el expediente. Nunca guarda binarios ni base64."
+        "Permite cargar múltiples archivos o una carpeta, leer PDFs nativos, ejecutar OCR en español e inglés para PDFs escaneados e imágenes, y procesar XLS, XLSX y CSV. Sugiere tipo documental, confianza de clasificación y datos extraídos para revisión humana. El checklist es contextual: BL, notificación y su correspondencia PDF son bases; termógrafos, liquidaciones comparativas, factura, liquidación por contenedor, nota de crédito y documentos de destrucción se vuelven obligatorios solo cuando la causa, el método o el tipo de caso lo requieren. Cada fila permite registrar Disponible, Faltante, Solicitado, Recibido, Rechazado, No aplica, Ilegible o Pendiente de revisión. Cada archivo conserva diagnóstico de extracción y uso de OCR. Si un archivo no es legible, requiere OCR o no está soportado, el demo lo marca de forma individual y permite continuar con el resto. Si encuentra valores críticos distintos entre documentos, los muestra como conflicto y no elige automáticamente. Los umbrales de precisión y criterios formales de aceptación OCR aún requieren validación de FIS. La carga de una carpeta completa evita duplicar entradas ya presentes en el expediente. Nunca guarda binarios ni base64."
     },
     {
       title: "6. Análisis de causa de daño",
@@ -2932,22 +3360,22 @@ function ManualPage() {
     {
       title: "7. Cálculo de pérdida",
       body:
-        "Muestra tres métodos en paralelo: SMV, Reporte de mercado y Factura vs. venta bruta. Si los documentos contienen valores comparables, presenta una propuesta preliminar con fuentes para cargarla como base editable. Permite venta a firme, rubros adicionales y exige justificación mínima para guardar un método seleccionado."
+        "Muestra tres métodos en paralelo: SMV con liquidaciones brutas, Reporte de mercado con valores brutos y Factura vs. venta neta de destino. Si los documentos contienen valores comparables, presenta una propuesta preliminar con fuentes para cargarla como base editable. Permite venta a firme, rubros adicionales y exige justificación mínima para guardar un método seleccionado. Admite USD, EUR, CLP, CNY, HKD y GBP; USD es la moneda por defecto. Cuando la moneda de origen difiere de la moneda de resultado, exige una tasa positiva, fecha y fuente, usando la dirección 1 moneda de origen = X moneda de resultado. La fecha aplicable se toma de la descarga del contenedor, la fuente oficial configurada es Xrate, se permite documentar una tasa manual y el monto final se redondea a dos decimales."
     },
     {
       title: "8. Seguimiento e historial",
       body:
-        "Registra cambios de estado, documentos, cálculos, cartas y reversiones con timestamp automático no editable. La reversión de estado solo está disponible para Gerente con motivo obligatorio."
+        "Registra cambios de estado, documentos, cálculos, cartas, correcciones de referencia y reversiones con timestamp automático no editable. La reversión de estado solo está disponible para Gerente con motivo obligatorio. Si una referencia se repite, el sistema advierte y mantiene los expedientes separados."
     },
     {
       title: "9. Alertas de prescripción",
       body:
-        `Calcula fecha de prescripción solo si existen fecha de descarga y jurisdicción explícita. Usa semáforo verde, ámbar o rojo y muestra un aviso persistente cuando un caso lleva más de ${INACTIVITY_ALERT_DAYS} días sin movimiento.`
+        `Calcula la fecha de prescripción solo si existen fecha de descarga y jurisdicción explícita. Para este alcance marítimo usa La Haya (1 año desde descarga) o Hamburgo (2 años desde descarga para Chile/Perú). Usa semáforo verde, ámbar o rojo; una ETA se muestra siempre como estimación y exige confirmar la fecha real antes del traspaso. La alerta de inactividad usa días corridos en Santiago y se activa al cumplir ${INACTIVITY_ALERT_DAYS} días. Reinician el contador la carga o solicitud de documentos, el cálculo y el cambio de estado/traspaso; ver la pantalla o corregir datos no lo reinicia. Se muestra en plataforma diariamente al Handler responsable y Gerente; agrega correo cuando el caso está cerca de prescribir o alcanza 20 días. Los envíos, lecturas y cierres quedan en bitácora; solo Gerente puede cerrar o silenciar. En este demo el envío por plataforma/correo se registra como simulado; el envío real requiere un servicio backend.`
     },
     {
       title: "10. Cartas automatizadas",
       body:
-        "Permite seleccionar Claim Notice, AoR, Harvest o LoA, completar sus campos parametrizados, editar el contenido, copiarlo y descargar un documento listo para imprimir."
+        "Permite seleccionar Claim Notice / Notificación a la naviera, AoR, Harvest o LoA, completar sus campos parametrizados y editar el contenido. La carta queda pendiente hasta que el handler responsable la aprueba; recién entonces se habilitan copiar, imprimir o descargar. Claim Notice y notificación a la naviera son el mismo documento y requieren conservar la correspondencia de envío en PDF. No se genera una quinta carta separada para SUBRO o certificados de destrucción en este alcance."
     },
     {
       title: "11. Mantenedores",
@@ -2962,17 +3390,22 @@ function ManualPage() {
     {
       title: "13. Informe de revisión y traspaso",
       body:
-        "Desde la pestaña Informe, el handler selecciona FIS para recupero extrajudicial o Lawgistic para recupero judicial y genera un resumen con documentación disponible y pendiente, causa propuesta, mérito preliminar y cálculo seleccionado. El informe queda en el historial, se puede descargar y debe revisarse antes de confirmar el traspaso. Si existen observaciones, el traspaso queda bloqueado hasta resolverlas."
+        "Desde la pestaña Informe, el Handler responsable selecciona FIS para recupero extrajudicial o Lawgistic para recupero judicial y genera un resumen con documentación disponible y pendiente, causa propuesta, mérito preliminar y cálculo seleccionado. Ambos destinos usan el mismo checklist contractual: datos mínimos del embarque, documentación mínima, causa válida confirmada, monto calculado, prescripción determinada y aprobación del Handler. AoR y reporte de inspección pueden quedar pendientes como excepciones explícitas; un mérito bajo no bloquea el traspaso. El informe queda en el historial y se puede descargar. El traspaso es un cambio de estado, no una entrega a otro sistema ni un bloqueo de lectura: el expediente sigue editable por el Handler responsable. Gerencia puede revertirlo con motivo obligatorio."
     },
     {
       title: "14. Memoria histórica",
       body:
-        "La memoria se precarga automáticamente con el historial incluido en el demo. También permite importar otro Excel si se necesita ampliar la historia. Conserva los registros reconocibles, su hoja, fila, campos identificados y referencias repetidas. La memoria se puede buscar y filtrar, pero no modifica los casos activos ni permite editar directamente el registro histórico."
+        "La memoria se precarga automáticamente con el historial incluido en el demo. Conserva los registros reconocibles, su hoja, fila, campos identificados y referencias repetidas. La memoria se puede buscar, filtrar y descargar, pero no modifica los casos activos ni permite editar directamente el registro histórico."
     },
     {
-      title: "15. Operación de inspección",
+      title: "15. Alcance de Fase 1",
       body:
-        "El perfil Inspector solo visualiza los casos que Gerente le haya asignado. Dentro de la pestaña Inspección puede registrar fecha, indicar si participará la naviera, escribir observaciones y descargar la Carta JSI. Gerente administra la asignación desde la ficha del caso."
+        "El alcance contractual de Fase 1 contempla Handler, Gerente y CEO. El perfil Inspector, la asignación restringida de casos y la Carta JSI no forman parte del baseline firmado; quedan documentados como evolución o Change Request para una etapa posterior."
+    },
+    {
+      title: "16. Glosario de nomenclatura",
+      body:
+        "Los nombres oficiales usados por el demo son Claim Notice para la notificación a la naviera, Lawgistic para el destino de recupero judicial y FIS para el destino de recupero extrajudicial. Las variantes antiguas Logistic y claim notice se normalizan solo al migrar datos heredados."
     }
   ];
   const roleGuides = [
@@ -2991,11 +3424,6 @@ function ManualPage() {
       guide:
         "Revisar el portafolio completo, comparar indicadores por handler, riesgos de prescripción y estado ejecutivo sin editar documentos ni cálculos."
     },
-    {
-      role: "Inspector",
-      guide:
-        "Buscar y revisar solo casos asignados, registrar antecedentes de inspección y descargar la Carta JSI. No puede crear casos, editar documentos ni modificar cálculos."
-    }
   ];
   return (
     <AppShell>
@@ -3031,9 +3459,7 @@ function ManualPage() {
               <li>Confirmar el traspaso y, si corresponde, generar la carta.</li>
               <li>Cambiar a Gerente para revisar dashboard, benchmark, avisos de inactividad y reversión.</li>
               <li>Entrar a Mantenedores para revisar o actualizar métodos y templates base.</li>
-              <li>Entrar a Memoria para importar y consultar el historial completo desde Excel.</li>
-              <li>Cambiar a Gerente para asignar un Inspector desde la ficha de un caso.</li>
-              <li>Cambiar a Inspector para buscar un caso asignado, registrar la inspección y descargar la Carta JSI.</li>
+              <li>Entrar a Memoria para consultar el historial completo incluido en el demo.</li>
             </ol>
           </div>
           <div className="panel">
@@ -3055,11 +3481,12 @@ function ManualPage() {
             </div>
             <ul className="manual-list">
               <li>No se guardan archivos reales, solo metadata.</li>
-              <li>El aviso de inactividad se activa cuando pasan más de 15 días sin una actualización.</li>
+              <li>El aviso de inactividad se activa con más de 15 días desde el último evento válido de bitácora; excluye casos traspasados y se muestra al handler responsable y a Gerente/CEO.</li>
               <li>No hay jurisdicción por defecto.</li>
               <li>No hay prescripción sin fecha de descarga y jurisdicción.</li>
+              <li>La ETA no reemplaza la fecha real de descarga para cerrar y traspasar un caso.</li>
               <li>No hay cálculo guardado sin justificación suficiente.</li>
-              <li>No hay edición de cálculo después del traspaso.</li>
+              <li>El traspaso cambia el estado, pero no bloquea la edición posterior del expediente por su Handler responsable.</li>
             </ul>
           </div>
         </div>

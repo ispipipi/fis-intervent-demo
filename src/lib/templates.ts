@@ -1,4 +1,4 @@
-import { CalculoPerdida, Caso, Documento, TemplateConfig, TemplateId } from "../types/domain";
+import { CalculoPerdida, Caso, Documento, TemplateConfig, TemplateDownloadFormat, TemplateId } from "../types/domain";
 import { currency, pendingField } from "./business";
 
 export type LetterTemplateId = TemplateId;
@@ -18,6 +18,23 @@ export type LetterTemplateDefinition = {
   fields: string[];
   baseContent: string;
   active: boolean;
+  officialName?: string;
+  effectiveDate?: string;
+  logoText?: string;
+  headerText?: string;
+  footerText?: string;
+  sender?: string;
+  recipient?: string;
+  legalText?: string;
+  requiredFields?: string[];
+  optionalFields?: string[];
+  manualEditableFields?: string[];
+  lockedFields?: string[];
+  signatureRule?: string;
+  authorizedSigner?: string;
+  downloadFormats?: TemplateDownloadFormat[];
+  requiresSerialNumber?: boolean;
+  requiredAttachments?: string[];
   build: (context: TemplateContext) => string;
 };
 
@@ -39,6 +56,7 @@ type TemplateValues = {
   claimAmount: string;
   currencyCode: string;
   methodBreakdown: string;
+  incidentDescription: string;
   today: string;
 };
 
@@ -59,6 +77,7 @@ export const TEMPLATE_TOKENS = [
   "surveyor",
   "claimAmount",
   "methodBreakdown",
+  "incidentDescription",
   "today"
 ] as const;
 
@@ -112,9 +131,10 @@ function buildValues({ caso, docs, calculo }: TemplateContext): TemplateValues {
     placeOfDischarge: pendingField(caso.placeOfDischarge),
     dateOfDischarge: formatDate(caso.dateOfDischarge),
     surveyor: pendingField(caso.surveyor),
-    claimAmount: amount !== undefined ? currency(amount, currencyCode) : pendingField(),
+  claimAmount: amount !== undefined ? currency(amount, currencyCode) : pendingField(),
     currencyCode,
     methodBreakdown,
+    incidentDescription: pendingField(caso.resumenCaso || caso.causaPotencial || caso.causaDano),
     today: today()
   };
 }
@@ -133,8 +153,14 @@ const commonFields = [
   "Carga",
   "Embarque y descarga",
   "Inspector",
-  "Monto calculado"
+  "Descripción del incidente",
+  "Reserva de derechos",
+  "Fecha de emisión"
 ];
+
+const commonRequiredFields = ["reference", "assured", "opponent", "vessel", "blNumber", "containers"];
+const commonLockedFields = ["reference", "assured", "opponent", "vessel", "blNumber", "containers"];
+const commonFormats: TemplateDownloadFormat[] = ["pdf", "word"];
 
 const claimNoticeContent = `FRUIT
 INSURANCE
@@ -149,7 +175,7 @@ Claims Department.
 
 Claim and Reimbursement Request Nº {{reference}}
 
-By these means and on behalf of our principals, {{assured}}, we hereby claim and request reimbursement of {{claimAmount}}, as the amount associated with the damaged goods.
+By these means and on behalf of our principals, {{assured}}, we hereby notify you of an incident affecting the goods identified below and reserve all applicable rights and remedies.
 
 ➢ B/L              : {{blNumber}}
 ➢ CONTAINER        : {{containers}}
@@ -159,12 +185,11 @@ By these means and on behalf of our principals, {{assured}}, we hereby claim and
 ➢ ETD              : {{dateOfShipment}}
 ➢ POD              : {{placeOfDischarge}}
 ➢ ETA / DISCHARGE  : {{dateOfDischarge}}
-➢ AMOUNT           : {{claimAmount}}
-➢ BREAKDOWN        : {{methodBreakdown}}
+➢ INCIDENT         : {{incidentDescription}}
 
 This claim is sustained as per the subrogated and/or assigned rights evidenced in the case file. For analysis of this claim and reimbursement request, we attach the documentation available in the digital case file.
 
-This claim and reimbursement request is submitted without prejudice to any applicable statute of limitation.
+This claim and reimbursement request is submitted without prejudice to any applicable statute of limitation and constitutes a reservation of rights.
 
 We would appreciate confirmation of receipt and reimbursement of the corresponding claimed amount to Fruit Insurance Services Chile SpA.
 
@@ -251,13 +276,30 @@ function renderTemplateText(content: string, context: TemplateContext) {
 export const LETTER_TEMPLATES: LetterTemplateDefinition[] = [
   {
     id: "claim-notice",
-    title: "Claim Notice",
-    shortTitle: "Claim notice",
-    description: "Carta de notificación y solicitud de reembolso a la naviera.",
+    title: "Claim Notice / Notificación a la naviera",
+    shortTitle: "Claim Notice",
+    description: "Carta contractual de notificación y solicitud de reembolso a la naviera. En este alcance representa el Claim Notice y no una quinta carta separada.",
     language: "English",
     fields: commonFields,
     baseContent: claimNoticeContent,
     active: true,
+    officialName: "Claim Notice / Notificación a la naviera",
+    effectiveDate: "2026-09-23",
+    logoText: "FRUIT INSURANCE SERVICES CHILE",
+    headerText: "Claim and Reimbursement Request",
+    footerText: "Documento emitido desde Intervent Preclaim para revisión y aprobación humana.",
+    sender: "Fruit Insurance Services Chile SpA",
+    recipient: "Transportista / Claims Department",
+    legalText: "Sin perjuicio de los derechos y plazos aplicables.",
+    requiredFields: ["assured", "opponent", "blNumber", "containers", "dateOfShipment", "dateOfDischarge", "incidentDescription", "today"],
+    optionalFields: ["reference", "csClaimNo", "cargo", "placeOfShipment", "placeOfDischarge", "surveyor"],
+    manualEditableFields: ["today", "incidentDescription"],
+    lockedFields: ["assured", "opponent", "blNumber", "containers", "dateOfShipment", "dateOfDischarge"],
+    signatureRule: "Sin firma automática; aprobación del Handler antes de emitir.",
+    authorizedSigner: "Handler responsable",
+    downloadFormats: commonFormats,
+    requiresSerialNumber: false,
+    requiredAttachments: ["BL", "Correspondencia de notificación"],
     build: (context) => renderTemplateText(claimNoticeContent, context)
   },
   {
@@ -269,6 +311,23 @@ export const LETTER_TEMPLATES: LetterTemplateDefinition[] = [
     fields: commonFields,
     baseContent: aorContent,
     active: true,
+    officialName: "Assignment of Rights",
+    effectiveDate: "2026-09-23",
+    logoText: "FRUIT INSURANCE SERVICES CHILE",
+    headerText: "Assignment of Rights",
+    footerText: "Documento emitido desde Intervent Preclaim para revisión y aprobación humana.",
+    sender: "Asegurado / exportador",
+    recipient: "Fruit Insurance Services Chile SpA",
+    legalText: "Cesión y transferencia de derechos conforme al texto aprobado por FIS.",
+    requiredFields: commonRequiredFields,
+    optionalFields: ["csClaimNo", "cargo", "placeOfShipment", "dateOfShipment", "placeOfDischarge", "dateOfDischarge", "surveyor"],
+    manualEditableFields: ["today"],
+    lockedFields: commonLockedFields,
+    signatureRule: "Requiere firma y timbre de las partes; no se firma automáticamente.",
+    authorizedSigner: "Representante legal del asegurado y representante receptor",
+    downloadFormats: commonFormats,
+    requiresSerialNumber: false,
+    requiredAttachments: ["BL", "Carta de subrogación o LoA"],
     build: (context) => renderTemplateText(aorContent, context)
   },
   {
@@ -280,6 +339,23 @@ export const LETTER_TEMPLATES: LetterTemplateDefinition[] = [
     fields: ["CS Claim Number", "Broker Claim Number", "Especie / Goods", "Contenedor", "BL / CRT / AWB", "Fecha de cosecha", "Firma, timbre y fecha"],
     baseContent: harvestContent,
     active: true,
+    officialName: "Harvest Certificate",
+    effectiveDate: "2026-09-23",
+    logoText: "FRUIT INSURANCE SERVICES CHILE",
+    headerText: "Harvest Certificate",
+    footerText: "Documento emitido desde Intervent Preclaim para revisión y aprobación humana.",
+    sender: "Productor / exportador",
+    recipient: "Fruit Insurance Services Chile SpA",
+    legalText: "Certificación de cosecha asociada al embarque identificado.",
+    requiredFields: ["assured", "cargo", "containers", "blNumber"],
+    optionalFields: ["csClaimNo", "reference", "today"],
+    manualEditableFields: ["today"],
+    lockedFields: ["assured", "cargo", "containers", "blNumber"],
+    signatureRule: "Requiere firma, timbre y fecha del emisor.",
+    authorizedSigner: "Representante autorizado del productor / exportador",
+    downloadFormats: commonFormats,
+    requiresSerialNumber: false,
+    requiredAttachments: ["BL", "Packing List", "Certificado de cosecha"],
     build: (context) => renderTemplateText(harvestContent, context)
   },
   {
@@ -291,12 +367,29 @@ export const LETTER_TEMPLATES: LetterTemplateDefinition[] = [
     fields: commonFields,
     baseContent: loaContent,
     active: true,
+    officialName: "Letter of Authority",
+    effectiveDate: "2026-09-23",
+    logoText: "FRUIT INSURANCE SERVICES CHILE",
+    headerText: "Letter of Authority",
+    footerText: "Documento emitido desde Intervent Preclaim para revisión y aprobación humana.",
+    sender: "Asegurado / exportador",
+    recipient: "Fruit Insurance Services Chile SpA",
+    legalText: "Autorización para gestionar el recupero conforme al texto aprobado por FIS.",
+    requiredFields: ["assured", "vessel", "voyage", "blNumber", "containers", "placeOfShipment", "placeOfDischarge", "cargo", "csClaimNo"],
+    optionalFields: ["reference", "dateOfShipment", "dateOfDischarge", "surveyor", "claimAmount"],
+    manualEditableFields: ["today"],
+    lockedFields: ["assured", "vessel", "voyage", "blNumber", "containers", "cargo"],
+    signatureRule: "Requiere firma y timbre del representante autorizado.",
+    authorizedSigner: "Representante legal del asegurado / exportador",
+    downloadFormats: commonFormats,
+    requiresSerialNumber: false,
+    requiredAttachments: ["BL", "Carta de subrogación o LoA"],
     build: (context) => renderTemplateText(loaContent, context)
   }
 ];
 
 export function defaultTemplateConfigs(): TemplateConfig[] {
-  return LETTER_TEMPLATES.map(({ id, title, shortTitle, description, language, fields, baseContent, active }) => ({
+  return LETTER_TEMPLATES.map(({ id, title, shortTitle, description, language, fields, baseContent, active, officialName, effectiveDate, logoText, headerText, footerText, sender, recipient, legalText, requiredFields, optionalFields, manualEditableFields, lockedFields, signatureRule, authorizedSigner, downloadFormats, requiresSerialNumber, requiredAttachments }) => ({
     id,
     title,
     shortTitle,
@@ -305,6 +398,23 @@ export function defaultTemplateConfigs(): TemplateConfig[] {
     fields,
     baseContent,
     active,
+    officialName,
+    effectiveDate,
+    logoText,
+    headerText,
+    footerText,
+    sender,
+    recipient,
+    legalText,
+    requiredFields,
+    optionalFields,
+    manualEditableFields,
+    lockedFields,
+    signatureRule,
+    authorizedSigner,
+    downloadFormats,
+    requiresSerialNumber,
+    requiredAttachments,
     version: 1,
     updatedAt: new Date().toISOString()
   }));
@@ -316,6 +426,41 @@ export function templateTokenIssues(content: string) {
   const unknown = [...new Set(found.filter((token) => !allowed.has(token)))];
   const unmatchedBraces = (content.match(/\{\{/g) || []).length !== (content.match(/\}\}/g) || []).length;
   return { unknown, unmatchedBraces };
+}
+
+export function templateHasPendingFields(content: string) {
+  return /\[PENDIENTE COMPLETAR\]|\{\{[^{}]+\}\}/i.test(content);
+}
+
+export function templateLockedTokenIssues(content: string, lockedFields: string[] = []) {
+  return lockedFields.filter((token) => !content.includes(`{{${token}}}`));
+}
+
+export function templateRequiredTokenIssues(content: string, requiredFields: string[] = []) {
+  return requiredFields.filter((token) => !content.includes(`{{${token}}}`));
+}
+
+export function templateMissingAttachments(docs: Documento[], requiredAttachments: string[] = []) {
+  return requiredAttachments.filter((attachment) => {
+    const matchingDocs = docs.filter((doc) => {
+      const status = doc.estadoDocumental;
+      const usable = !status || status === "disponible" || status === "recibido";
+      return doc.disponible && usable && doc.tipoDocumento === attachment;
+    });
+    if (attachment === "Correspondencia de notificación") {
+      return !matchingDocs.some((doc) => /\.pdf$/i.test(doc.originalName || doc.nombreArchivo));
+    }
+    return matchingDocs.length === 0;
+  });
+}
+
+export function templateContentFingerprint(content: string) {
+  let hash = 2166136261;
+  for (const character of content) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
 }
 
 export function getLetterTemplate(id: LetterTemplateId, configs: TemplateConfig[] = []) {
@@ -364,6 +509,8 @@ function textToHtml(value: string) {
 }
 
 export function buildPrintableHtml(template: LetterTemplateDefinition, text: string) {
+  const headerText = template.headerText ? `<div class="template-header">${escapeHtml(template.headerText)}</div>` : "";
+  const footerText = template.footerText || "Documento generado para revisión humana";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -377,6 +524,7 @@ export function buildPrintableHtml(template: LetterTemplateDefinition, text: str
     .mark { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 8px; background: #1d3150; color: white; font-weight: 800; }
     .brand strong { display: block; font-size: 14px; letter-spacing: .03em; }
     .brand small { color: #187d80; font-size: 9px; letter-spacing: .12em; }
+    .template-header { margin: 0 0 22px; border-bottom: 1px solid #dce7f5; padding-bottom: 10px; color: #187d80; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
     .content { font-size: 12px; line-height: 1.46; white-space: normal; }
     .content p { margin: 0 0 15px; }
     .footer { margin-top: 32px; border-top: 1px solid #dce7f5; padding-top: 10px; color: #687991; font-size: 9px; }
@@ -385,9 +533,10 @@ export function buildPrintableHtml(template: LetterTemplateDefinition, text: str
 </head>
 <body>
   <main class="sheet">
-    <header class="brand"><span class="mark">IP</span><span><strong>FRUIT INSURANCE SERVICES</strong><small>CHILE · EST. 2015</small></span></header>
+    <header class="brand"><span class="mark">IP</span><span><strong>${escapeHtml(template.logoText || "FRUIT INSURANCE SERVICES")}</strong><small>CHILE · EST. 2015</small></span></header>
+    ${headerText}
     <section class="content">${textToHtml(text)}</section>
-    <footer class="footer">${escapeHtml(template.title)} · Intervent Preclaim · Documento generado para revisión humana</footer>
+    <footer class="footer">${escapeHtml(template.title)} · Intervent Preclaim · ${escapeHtml(footerText)}</footer>
   </main>
 </body>
 </html>`;
