@@ -114,6 +114,8 @@ export type DocumentStatus =
   | "ilegible"
   | "pendiente de revisión";
 
+export type DocumentRequirement = "obligatorio" | "condicional" | "adicional";
+
 export type ExtractionStatus = "procesado" | "procesado con OCR" | "parcial" | "no soportado" | "requiere OCR";
 
 export type EventType =

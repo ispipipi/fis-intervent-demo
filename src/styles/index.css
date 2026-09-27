@@ -2694,7 +2694,7 @@
     line-height: 1.35;
   }
 
-  .check-item .check-required {
+  .check-item .check-requirement {
     display: inline-block;
     margin: 0;
     padding: 2px 5px;
@@ -2705,6 +2705,26 @@
     font-weight: 700;
     letter-spacing: 0.03em;
     text-transform: uppercase;
+  }
+
+  .check-item .check-requirement-conditional {
+    background: rgba(180, 83, 9, 0.12);
+    color: #9a3412;
+  }
+
+  .check-item .check-requirement-adicional {
+    background: rgba(100, 116, 139, 0.12);
+    color: #475569;
+  }
+
+  .matrix-summary-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    padding: 4px 8px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--field);
   }
 
   .checklist-status-select {

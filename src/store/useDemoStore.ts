@@ -32,6 +32,7 @@ import {
   calculateLoss,
   calculatePrescription,
   classifyDocument,
+  documentChecklist,
   isCanonicalCaseReference,
   normalizeCaseReference,
   renamedFile,
@@ -547,6 +548,14 @@ export const useDemoStore = create<DemoState>()(
         if (!caso) return { ok: false, error: "No se encontró el caso." };
         if (state.usuario.role !== "Handler" || state.usuario.nombre !== caso.claimHandler) {
           return { ok: false, error: "Solo el Handler responsable puede modificar el checklist documental." };
+        }
+        const checklistItem = documentChecklist(
+          caso,
+          state.documentos.filter((documento) => documento.casoId === casoId),
+          state.calculosPerdida.find((calculo) => calculo.casoId === casoId)
+        ).find((item) => item.type === type);
+        if (status === "no aplica" && checklistItem?.required) {
+          return { ok: false, error: "Este documento es exigible para el caso y no puede marcarse como No aplica." };
         }
         if (status === "recibido" && !state.documentos.some((documento) => documento.casoId === casoId && documento.tipoDocumento === type && documento.disponible)) {
           return { ok: false, error: "No puedes marcar como recibido un documento que aún no está cargado." };

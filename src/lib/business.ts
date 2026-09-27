@@ -7,6 +7,7 @@ import {
   DocumentType,
   Documento,
   DocumentStatus,
+  DocumentRequirement,
   CurrencyCode,
   EventType,
   InactivityAlertChannel,
@@ -510,9 +511,17 @@ export const DOCUMENT_STATUS_LABELS: Record<DocumentStatus, string> = {
   "pendiente de revisión": "Pendiente de revisión"
 };
 
+export const DOCUMENT_REQUIREMENT_LABELS: Record<DocumentRequirement, string> = {
+  obligatorio: "Obligatorio",
+  condicional: "Condicional",
+  adicional: "Adicional"
+};
+
 export type DocumentChecklistItem = {
   type: DocumentType;
   status: DocumentStatus;
+  requirement: DocumentRequirement;
+  applies: boolean;
   required: boolean;
   reason: string;
   documents: Documento[];
@@ -524,34 +533,46 @@ function isDestructionCase(caso: Caso) {
 }
 
 export function documentChecklist(caso: Caso, documentos: Documento[], calculo?: CalculoPerdida): DocumentChecklistItem[] {
-  const required = new Map<DocumentType, string>([
-    ["BL", "Siempre requerido para identificar el embarque."],
-    ["Carta de notificación a la naviera", "Documento base para preservar derechos frente al transportista."],
-    ["Correspondencia de notificación", "Debe conservarse el correo o correspondencia de envío a la naviera en PDF."]
-  ]);
-  if (caso.causaDano?.toLowerCase().includes("temperatura")) required.set("Registros de termógrafos", "Aplica cuando la causa del caso es temperatura.");
-  if (calculo?.metodoSeleccionado === "1") required.set("Liquidaciones comparativas o informe de mercado", "Aplica porque se seleccionó el método de embarque comparable.");
-  if (calculo?.metodoSeleccionado === "2") required.set("Liquidaciones comparativas o informe de mercado", "Aplica porque se seleccionó el método de reporte de mercado.");
-  if (calculo?.metodoSeleccionado === "3") {
-    required.set("Factura de exportación", "Aplica porque se seleccionó el método factura versus venta destino.");
-    required.set("Liquidación por contenedor", "Respalda la venta neta real del embarque afectado.");
-  }
-  if (calculo?.ventaAFirme) required.set("Nota de crédito", "Aplica cuando el caso es una venta a firme.");
-  if (isDestructionCase(caso)) {
-    required.set("Certificado de destrucción", "Aplica en pérdida total o parcial con destrucción documentada.");
-    required.set("Factura de destrucción", "Aplica cuando existe un costo de destrucción reclamable.");
-  }
+  type ActiveDocumentRule = {
+    requirement: "obligatorio" | "condicional";
+    reason: string;
+    applies?: (currentCase: Caso, currentCalculation?: CalculoPerdida) => boolean;
+  };
+  const rules = new Map<DocumentType, ActiveDocumentRule>();
+  const addRule = (
+    type: DocumentType,
+    requirement: ActiveDocumentRule["requirement"],
+    reason: string,
+    applies?: ActiveDocumentRule["applies"]
+  ) => rules.set(type, { requirement, reason, applies });
+
+  addRule("BL", "obligatorio", "Siempre requerido para identificar el embarque.");
+  addRule("Carta de notificación a la naviera", "obligatorio", "Documento base para preservar derechos frente al transportista.");
+  addRule("Correspondencia de notificación", "obligatorio", "Debe conservarse el correo o correspondencia de envío a la naviera en PDF.");
+  addRule("Registros de termógrafos", "condicional", "Aplica cuando la causa del caso es temperatura.", (currentCase) => currentCase.causaDano?.toLowerCase().includes("temperatura") || false);
+  addRule("Liquidaciones comparativas o informe de mercado", "condicional", "Aplica cuando se selecciona el método de embarque comparable o de reporte de mercado.", (_currentCase, currentCalculation) => currentCalculation?.metodoSeleccionado === "1" || currentCalculation?.metodoSeleccionado === "2");
+  addRule("Factura de exportación", "condicional", "Aplica cuando se selecciona el método factura versus venta destino.", (_currentCase, currentCalculation) => currentCalculation?.metodoSeleccionado === "3" || currentCalculation?.ventaAFirme === true);
+  addRule("Liquidación por contenedor", "condicional", "Respalda la venta neta real del embarque afectado.", (_currentCase, currentCalculation) => currentCalculation?.metodoSeleccionado === "3");
+  addRule("Nota de crédito", "condicional", "Aplica cuando el caso corresponde a una venta a firme.", (_currentCase, currentCalculation) => currentCalculation?.ventaAFirme === true);
+  addRule("Certificado de destrucción", "condicional", "Aplica en pérdida total o parcial con destrucción documentada.", (currentCase) => isDestructionCase(currentCase));
+  addRule("Factura de destrucción", "condicional", "Aplica cuando existe un costo de destrucción reclamable.", (currentCase) => isDestructionCase(currentCase));
 
   return DOCUMENT_TYPES.map((type) => {
     const docs = documentos.filter((doc) => doc.tipoDocumento === type && doc.disponible);
     const override = caso.documentStatuses?.[type];
     const documentStatus = docs.find((doc) => doc.estadoDocumental)?.estadoDocumental;
-    const status = override || documentStatus || (docs.length > 0 ? "recibido" : required.has(type) ? "faltante" : "no aplica");
+    const rule = rules.get(type);
+    const requirement = rule?.requirement || "adicional";
+    const applies = rule ? rule.applies?.(caso, calculo) ?? true : false;
+    const required = applies && requirement !== "adicional";
+    const status = override || documentStatus || (docs.length > 0 ? "recibido" : required ? "faltante" : "no aplica");
     return {
       type,
       status,
-      required: required.has(type),
-      reason: required.get(type) || "No definido como obligatorio para este caso.",
+      requirement,
+      applies,
+      required,
+      reason: rule?.reason || "Documento adicional: se incorpora cuando el caso lo requiera.",
       documents: docs
     };
   });

@@ -58,6 +58,10 @@ function caseRows(
     const calculo = calculosPerdida.find((item) => item.casoId === caso.id);
     const checklist = documentChecklist(caso, docs, calculo);
     const requiredChecklist = checklist.filter((item) => item.required);
+    const conditionalApplicable = checklist.filter((item) => item.requirement === "condicional" && item.applies);
+    const additionalChecklist = checklist.filter((item) => item.requirement === "adicional");
+    const requestedChecklist = checklist.filter((item) => item.status === "solicitado");
+    const notApplicableChecklist = checklist.filter((item) => item.status === "no aplica");
     const missingChecklist = requiredChecklist.filter((item) => !isChecklistItemComplete(item));
     const events = bitacora.filter((event) => event.casoId === caso.id);
     const endEvent = transferEvent(caso, events);
@@ -90,6 +94,11 @@ function caseRows(
       "Documentos disponibles": requiredChecklist.filter((item) => isChecklistItemComplete(item)).length,
       "Documentos faltantes": missingChecklist.length,
       "Detalle documentos faltantes": missingChecklist.map((item) => item.type).join("; "),
+      "Obligatorios aplicables": checklist.filter((item) => item.requirement === "obligatorio").length,
+      "Condicionales aplicables": conditionalApplicable.length,
+      "Adicionales disponibles": additionalChecklist.filter((item) => isChecklistItemComplete(item)).length,
+      "Documentos solicitados": requestedChecklist.length,
+      "Documentos no aplicables": notApplicableChecklist.length,
       "Pérdida calculada": lossAmount,
       "Moneda pérdida": lossCurrency,
       "Moneda origen cálculo": calculo?.monedaOrigen || calculo?.moneda,

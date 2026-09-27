@@ -65,6 +65,7 @@ import {
   DOCUMENT_TYPES,
   documentChecklist,
   documentChecklistCoverage,
+  DOCUMENT_REQUIREMENT_LABELS,
   DOCUMENT_STATUS_LABELS,
   HANDLERS,
   hasRequiredMinimum,
@@ -1981,6 +1982,9 @@ function DocumentsTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<t
   const calculo = calculosPerdida.find((item) => item.casoId === caso.id);
   const checklist = documentChecklist(caso, docs, calculo);
   const requiredChecklist = checklist.filter((item) => item.required);
+  const conditionalChecklist = checklist.filter((item) => item.requirement === "condicional");
+  const additionalChecklist = checklist.filter((item) => item.requirement === "adicional");
+  const notApplicableChecklist = checklist.filter((item) => item.status === "no aplica");
   const missingChecklist = requiredChecklist.filter((item) => !isChecklistItemComplete(item));
   const completedRequired = requiredChecklist.filter((item) => isChecklistItemComplete(item)).length;
   const addFiles = async (files: FileList | File[]) => {
@@ -2202,10 +2206,19 @@ function DocumentsTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<t
       </div>
       <div className="panel">
         <div className="panel-title">
-          <h3>Checklist documental</h3>
-          <span>{completedRequired}/{requiredChecklist.length} obligatorios</span>
+          <div>
+            <h3>Matriz documental</h3>
+            <p className="text-xs text-slate-500">Requerimiento y estado operativo por documento.</p>
+          </div>
+          <span>{completedRequired}/{requiredChecklist.length} aplicables completos</span>
         </div>
-        <p className="mb-4 text-xs text-slate-500">La matriz se ajusta al tipo de caso, la causa y el método de cálculo seleccionado. Los documentos no aplicables no bloquean el cierre.</p>
+        <p className="mb-4 text-xs text-slate-500">Obligatorios y condicionales aplicables bloquean el cierre si faltan. Los adicionales se pueden incorporar cuando el caso los requiera y los no aplicables no bloquean el traspaso.</p>
+        <div className="mb-4 flex flex-wrap gap-2 text-xs text-slate-600">
+          <span className="matrix-summary-chip">Obligatorios: {checklist.filter((item) => item.requirement === "obligatorio").length}</span>
+          <span className="matrix-summary-chip">Condicionales: {conditionalChecklist.length}</span>
+          <span className="matrix-summary-chip">Adicionales: {additionalChecklist.length}</span>
+          <span className="matrix-summary-chip">No aplica: {notApplicableChecklist.length}</span>
+        </div>
         <div className="checklist-grid">
           {checklist.map((item) => {
             const complete = isChecklistItemComplete(item);
@@ -2215,7 +2228,7 @@ function DocumentsTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<t
               <div>
                 <div className="flex items-center gap-2">
                   <p>{item.type}</p>
-                  {item.required && <span className="check-required">Obligatorio</span>}
+                  <span className={cx("check-requirement", `check-requirement-${item.requirement}`)}>{DOCUMENT_REQUIREMENT_LABELS[item.requirement]}</span>
                 </div>
                 <span>{DOCUMENT_STATUS_LABELS[item.status]}{item.documents.length > 1 ? ` · ${item.documents.length} archivos` : ""}</span>
                 <small>{item.reason}</small>
@@ -3437,7 +3450,7 @@ function ManualPage() {
     {
       title: "5. Documentos y checklist",
       body:
-        "Permite cargar múltiples archivos o una carpeta, leer PDFs nativos, ejecutar OCR en español e inglés para PDFs escaneados e imágenes, y procesar XLS, XLSX y CSV. Sugiere tipo documental, confianza de clasificación y datos extraídos para revisión humana. El checklist es contextual: BL, notificación y su correspondencia PDF son bases; termógrafos, liquidaciones comparativas, factura, liquidación por contenedor, nota de crédito y documentos de destrucción se vuelven obligatorios solo cuando la causa, el método o el tipo de caso lo requieren. Cada fila permite registrar Disponible, Faltante, Solicitado, Recibido, Rechazado, No aplica, Ilegible o Pendiente de revisión. Cada archivo conserva diagnóstico de extracción y uso de OCR. Si un archivo no es legible, requiere OCR o no está soportado, el demo lo marca de forma individual y permite continuar con el resto. Si encuentra valores críticos distintos entre documentos, los muestra como conflicto y no elige automáticamente. Los umbrales de precisión y criterios formales de aceptación OCR aún requieren validación de FIS. La carga de una carpeta completa evita duplicar entradas ya presentes en el expediente. Nunca guarda binarios ni base64."
+        "Permite cargar múltiples archivos o una carpeta, leer PDFs nativos, ejecutar OCR en español e inglés para PDFs escaneados e imágenes, y procesar XLS, XLSX y CSV. Sugiere tipo documental, confianza de clasificación y datos extraídos para revisión humana. La matriz separa la exigencia del estado: BL, notificación y su correspondencia PDF son obligatorios; termógrafos, liquidaciones comparativas, factura, liquidación por contenedor, nota de crédito y documentos de destrucción son condicionales según causa, método o tipo de caso; el resto queda como adicional hasta que el caso lo requiera. Cada fila permite registrar Disponible, Faltante, Solicitado, Recibido, Rechazado, No aplica, Ilegible o Pendiente de revisión. Un documento obligatorio o condicional aplicable no puede marcarse como No aplica. Cada archivo conserva diagnóstico de extracción y uso de OCR. Si un archivo no es legible, requiere OCR o no está soportado, el demo lo marca de forma individual y permite continuar con el resto. Si encuentra valores críticos distintos entre documentos, los muestra como conflicto y no elige automáticamente. Los umbrales de precisión y criterios formales de aceptación OCR aún requieren validación de FIS. La carga de una carpeta completa evita duplicar entradas ya presentes en el expediente. Nunca guarda binarios ni base64."
     },
     {
       title: "6. Análisis de causa de daño",
