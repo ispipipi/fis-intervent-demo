@@ -23,7 +23,9 @@ import {
   DischargeDateType,
   LetterApproval,
   InactivityAlertChannel,
-  InactivityAlertState
+  InactivityAlertState,
+  TransportMode,
+  ExceptionalTransferAuthorization
 } from "../types/domain";
 import {
   buildCasoFromInput,
@@ -59,7 +61,7 @@ type DemoState = {
   updateCase: (casoId: string, patch: Partial<Caso>) => void;
   updateCaseDetails: (
     casoId: string,
-    patch: Partial<Pick<Caso, "id" | "dateOfDischarge" | "dateOfDischargeType" | "jurisdiccion">>,
+    patch: Partial<Pick<Caso, "id" | "dateOfDischarge" | "dateOfDischargeType" | "fechaRecepcion" | "modoTransporte" | "jurisdiccion">>,
     referenceChangeReason?: string
   ) => { ok: boolean; error?: string };
   prepareUpload: (files: FileList | File[]) => UploadDraft[];
@@ -73,7 +75,7 @@ type DemoState = {
   saveAnalysis: (casoId: string, analysis: DamageAnalysis) => void;
   saveCalculation: (calculation: CalculoPerdida) => { ok: boolean; error?: string };
   generateReviewReport: (casoId: string, destination: TransferDestination) => ReviewReport | undefined;
-  transitionCase: (casoId: string, nextStatus: CaseStatus, detail: string) => { ok: boolean; error?: string };
+  transitionCase: (casoId: string, nextStatus: CaseStatus, detail: string, exceptionalReason?: string) => { ok: boolean; error?: string };
   revertCase: (casoId: string, previousStatus: CaseStatus, reason: string) => { ok: boolean; error?: string };
   registerLetter: (casoId: string, templateId: TemplateId, fingerprint: string, detail: string) => void;
   approveLetter: (casoId: string, approval: Pick<LetterApproval, "templateId" | "version" | "fingerprint">) => { ok: boolean; error?: string };
@@ -242,7 +244,11 @@ const seedEvents: BitacoraEvento[] = [
 function initialState() {
   return {
     usuario: { role: "Handler" as const, nombre: "Emely Lambraño" },
-    casos: seedCases,
+    casos: seedCases.map((caso) => ({
+      ...caso,
+      fechaRecepcion: caso.fechaRecepcion || caso.createdAt.slice(0, 10),
+      modoTransporte: caso.modoTransporte || "Marítimo"
+    })),
     documentos: seedDocs,
     calculosPerdida: seedCalculations,
     bitacora: seedEvents,
@@ -288,6 +294,8 @@ function migrateLegacyTransferLabels(persistedState: unknown): Partial<DemoState
         }
         return sanitizedCase;
       })(),
+      fechaRecepcion: caso.fechaRecepcion || caso.createdAt?.slice(0, 10),
+      modoTransporte: caso.modoTransporte || "Marítimo",
       estado: ((caso.estado as string) === "Traspasado a Logistic" ? "Traspasado a Lawgistic" : caso.estado) as CaseStatus,
       informeRevision: caso.informeRevision
         ? {
@@ -355,16 +363,20 @@ export const useDemoStore = create<DemoState>()(
         if (!currentCase) return;
         const nowIso = new Date().toISOString();
         set((state) => ({
-          casos: state.casos.map((caso) =>
-            caso.id === casoId
-              ? {
-                  ...caso,
-                  ...patch,
-                  fechaPrescripcion: calculatePrescription(patch.dateOfDischarge ?? caso.dateOfDischarge, patch.jurisdiccion ?? caso.jurisdiccion),
-                  ultimaActualizacion: nowIso
-                }
-              : caso
-          ),
+          casos: state.casos.map((caso) => {
+            if (caso.id !== casoId) return caso;
+            const basePrescription = calculatePrescription(
+              patch.dateOfDischarge ?? caso.dateOfDischarge,
+              patch.jurisdiccion ?? caso.jurisdiccion,
+              patch.modoTransporte ?? caso.modoTransporte
+            );
+            return {
+              ...caso,
+              ...patch,
+              fechaPrescripcion: basePrescription,
+              ultimaActualizacion: nowIso
+            };
+          }),
           bitacora: [
             {
               id: crypto.randomUUID(),
@@ -405,12 +417,17 @@ export const useDemoStore = create<DemoState>()(
         const nextDate = patch.dateOfDischarge === undefined ? current.dateOfDischarge : patch.dateOfDischarge;
         const nextDateType: DischargeDateType | undefined =
           patch.dateOfDischargeType === undefined ? current.dateOfDischargeType : patch.dateOfDischargeType;
+        const nextFechaRecepcion = patch.fechaRecepcion === undefined ? current.fechaRecepcion : patch.fechaRecepcion;
+        const nextModoTransporte: TransportMode = patch.modoTransporte || current.modoTransporte || "Marítimo";
         const nextJurisdiccion = patch.jurisdiccion === undefined ? current.jurisdiccion : patch.jurisdiccion;
+        const nextPrescription = calculatePrescription(nextDate, nextJurisdiccion, nextModoTransporte);
         const nowIso = new Date().toISOString();
         const changedFields: string[] = [];
         if (nextId !== current.id) changedFields.push(`referencia ${current.id} → ${nextId}`);
         if (nextDate !== current.dateOfDischarge) changedFields.push(`fecha ${current.dateOfDischarge || "sin fecha"} → ${nextDate || "sin fecha"}`);
         if (nextDateType !== current.dateOfDischargeType) changedFields.push(`tipo de fecha ${current.dateOfDischargeType || "Real"} → ${nextDateType || "Real"}`);
+        if (nextFechaRecepcion !== current.fechaRecepcion) changedFields.push(`fecha de recepción ${current.fechaRecepcion || "sin fecha"} → ${nextFechaRecepcion || "sin fecha"}`);
+        if (nextModoTransporte !== (current.modoTransporte || "Marítimo")) changedFields.push(`modo de transporte ${current.modoTransporte || "Marítimo"} → ${nextModoTransporte}`);
         if (nextJurisdiccion !== current.jurisdiccion) changedFields.push(`jurisdicción ${current.jurisdiccion || "sin definir"} → ${nextJurisdiccion || "sin definir"}`);
 
         set((state) => ({
@@ -421,8 +438,10 @@ export const useDemoStore = create<DemoState>()(
                   id: nextId,
                   dateOfDischarge: nextDate,
                   dateOfDischargeType: nextDateType,
+                  fechaRecepcion: nextFechaRecepcion,
+                  modoTransporte: nextModoTransporte,
                   jurisdiccion: nextJurisdiccion,
-                  fechaPrescripcion: calculatePrescription(nextDate, nextJurisdiccion),
+                  fechaPrescripcion: nextPrescription,
                   informeRevision: caso.informeRevision
                     ? { ...caso.informeRevision, caseId: nextId }
                     : undefined,
@@ -742,7 +761,7 @@ export const useDemoStore = create<DemoState>()(
         const caseDocuments = get().documentos.filter((document) => document.casoId === calculation.casoId && document.disponible);
         const availableTypes = new Set(caseDocuments.map((document) => document.tipoDocumento));
         const requiredTypes = calculation.ventaAFirme
-          ? ["Nota de crédito"]
+          ? ["Factura de exportación", "Nota de crédito"]
           : calculation.metodoSeleccionado === "1" || calculation.metodoSeleccionado === "2"
             ? ["Liquidación por contenedor", "Liquidaciones comparativas o informe de mercado"]
             : calculation.metodoSeleccionado === "3"
@@ -751,6 +770,9 @@ export const useDemoStore = create<DemoState>()(
         const missingSources = requiredTypes.filter((type) => !availableTypes.has(type as Documento["tipoDocumento"]));
         if (missingSources.length > 0) {
           return { ok: false, error: `Falta respaldo documental para cerrar el cálculo: ${missingSources.join(", ")}.` };
+        }
+        if (calculation.ventaAFirme && !calculation.ventaAFirmeConfirmada) {
+          return { ok: false, error: "Confirma que la factura de exportación identifica la venta como a firme antes de guardar." };
         }
         if (!calculation.ventaAFirme && (calculation.cantidadAfectada === undefined || calculation.cantidadAfectada <= 0)) {
           return { ok: false, error: "Indica la cantidad afectada y su unidad antes de cerrar el cálculo." };
@@ -834,31 +856,53 @@ export const useDemoStore = create<DemoState>()(
         }));
         return report;
       },
-      transitionCase: (casoId, nextStatus, detail) => {
+      transitionCase: (casoId, nextStatus, detail, exceptionalReason) => {
         const currentCase = get().casos.find((caso) => caso.id === casoId);
         if (!currentCase) return { ok: false, error: "No se encontró el caso." };
         if (isTransferredCase(currentCase)) return { ok: false, error: "El caso ya fue traspasado y no admite nuevos cambios." };
+        let freshReport: ReturnType<typeof buildReviewReport> | undefined;
+        let exceptionalAuthorization: ExceptionalTransferAuthorization | undefined;
         if (nextStatus.startsWith("Traspasado")) {
           if (get().usuario.role !== "Handler" || get().usuario.nombre !== currentCase.claimHandler) {
             return { ok: false, error: "Solo el Handler responsable puede ejecutar el traspaso." };
           }
           const destination = nextStatus === "Traspasado a FIS" ? "FIS" : "Lawgistic";
-          const freshReport = buildReviewReport(
+          freshReport = buildReviewReport(
             currentCase,
             get().documentos.filter((item) => item.casoId === casoId),
             get().calculosPerdida.find((item) => item.casoId === casoId),
             get().usuario.nombre,
             destination
           );
-          if (!currentCase.informeRevision?.ready || currentCase.informeRevision.destination !== destination) {
+          if (!currentCase.informeRevision || currentCase.informeRevision.destination !== destination) {
             return { ok: false, error: "Genera y revisa nuevamente el informe para el destino seleccionado." };
           }
-          if (!freshReport.ready) return { ok: false, error: "El traspaso está bloqueado: resuelve el checklist de cierre antes de derivar el caso." };
+          if (!freshReport.ready) {
+            if (!exceptionalReason?.trim() || exceptionalReason.trim().length < 10) {
+              return { ok: false, error: "Para un traspaso incompleto debes registrar una autorización de al menos 10 caracteres." };
+            }
+            const nowIso = new Date().toISOString();
+            exceptionalAuthorization = {
+              destination,
+              reason: exceptionalReason.trim(),
+              authorizedBy: get().usuario.nombre,
+              authorizedAt: nowIso,
+              pendingDocuments: freshReport.missingDocuments,
+              pendingActions: freshReport.pendingActions
+            };
+          }
         }
         const nowIso = new Date().toISOString();
         set((state) => ({
           casos: state.casos.map((caso) =>
-            caso.id === casoId ? { ...caso, estado: nextStatus, ultimaActualizacion: nowIso } : caso
+            caso.id === casoId
+              ? {
+                  ...caso,
+                  estado: nextStatus,
+                  ...(exceptionalAuthorization ? { traspasoExcepcional: exceptionalAuthorization } : {}),
+                  ultimaActualizacion: nowIso
+                }
+              : caso
           ),
           bitacora: [
             {
@@ -866,7 +910,9 @@ export const useDemoStore = create<DemoState>()(
               casoId,
               timestamp: nowIso,
               tipoEvento: "cambio_estado",
-              detalle: detail,
+              detalle: exceptionalAuthorization
+                ? `${detail} Traspaso excepcional autorizado por ${exceptionalAuthorization.authorizedBy}: ${exceptionalAuthorization.reason}. Pendientes conservados: ${exceptionalAuthorization.pendingDocuments.join(", ") || "ninguno"}.`
+                : detail,
               usuario: state.usuario.nombre
             },
             ...state.bitacora

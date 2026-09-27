@@ -38,7 +38,6 @@ import {
   DocumentStatus,
   Jurisdiccion,
   NewCaseInput,
-  RubroAdicional,
   ExtractedCaseData,
   ExtractedLossProposal,
   ReviewReport,
@@ -51,6 +50,7 @@ import {
   TemplateDownloadFormat,
   TemplateId,
   DischargeDateType,
+  TransportMode,
   CurrencyCode
 } from "./types/domain";
 import { mergeExtractedData, processDocumentFiles } from "./lib/extraction";
@@ -80,7 +80,7 @@ import {
   normalizeCaseReference,
   nextStatusFromCase,
   pendingField,
-  PRESCRIPTION_RULES,
+  prescriptionRuleFor,
   prescriptionStatus,
   REFERENCE_CHANGE_REASONS,
   referencePrescriptionMismatch,
@@ -1072,19 +1072,27 @@ function HistoricalValue({ label, value }: { label: string; value?: string }) {
 function NewCasePage() {
   const { usuario, casos, createCase, prepareUpload, confirmUpload } = useDemoStore();
   const navigate = useNavigate();
-  const [input, setInput] = useState<NewCaseInput>({ claimHandler: usuario.nombre, dateOfDischargeType: "Real" });
+  const [input, setInput] = useState<NewCaseInput>({
+    claimHandler: usuario.nombre,
+    dateOfDischargeType: "Real",
+    fechaRecepcion: new Date().toISOString().slice(0, 10),
+    modoTransporte: "Marítimo"
+  });
   const [drafts, setDrafts] = useState<UploadDraft[]>([]);
   const [proposal, setProposal] = useState<ExtractedCaseData>();
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingError, setProcessingError] = useState("");
   const [error, setError] = useState("");
-  const hasData = Object.values(input).some(Boolean);
+  const hasData = Object.entries(input).some(([key, value]) =>
+    !["claimHandler", "dateOfDischargeType", "fechaRecepcion", "modoTransporte"].includes(key) && Boolean(value)
+  );
   const duplicateReference = input.id?.trim()
     ? casos.find((caso) => normalizeCaseReference(caso.id) === normalizeCaseReference(input.id || ""))
     : undefined;
-  const referenceMismatch = referencePrescriptionMismatch(input.id, input.dateOfDischarge, input.jurisdiccion);
-  const calculatedPrescription = calculatePrescription(input.dateOfDischarge, input.jurisdiccion);
+  const referenceMismatch = referencePrescriptionMismatch(input.id, input.dateOfDischarge, input.jurisdiccion, input.modoTransporte);
+  const calculatedPrescription = calculatePrescription(input.dateOfDischarge, input.jurisdiccion, input.modoTransporte);
+  const prescriptionRule = prescriptionRuleFor(input.jurisdiccion, input.modoTransporte);
   if (usuario.role !== "Handler") return <Navigate to="/casos" replace />;
 
   const update = (key: keyof NewCaseInput, value: string) => {
@@ -1143,7 +1151,8 @@ function NewCasePage() {
     processFolder(event.dataTransfer.files);
   };
   const validateComplete = () => {
-    if (!hasRequiredMinimum(input)) return "Completa handler, asegurado, oponente, nave, fecha de descarga y jurisdicción.";
+    if (!hasRequiredMinimum(input)) return "Completa handler, asegurado, oponente, nave, fecha de descarga y la regla de prescripción aplicable.";
+    if (input.fechaRecepcion && input.fechaRecepcion > new Date().toISOString().slice(0, 10)) return "La fecha de recepción no puede ser futura.";
     if (input.dateOfDischarge && input.dateOfDischarge > new Date().toISOString().slice(0, 10) && input.dateOfDischargeType !== "ETA") {
       return "La fecha efectiva de descarga no puede ser futura. Selecciona ETA si corresponde.";
     }
@@ -1269,9 +1278,9 @@ function NewCasePage() {
             Revisa la referencia: su período de prescripción es <strong>{referenceMismatch.currentPeriod}</strong>, pero con la fecha y jurisdicción actuales el vencimiento cae en <strong>{referenceMismatch.expectedPeriod}</strong> ({new Date(`${referenceMismatch.prescriptionDate}T00:00:00`).toLocaleDateString("es-CL")}). Puedes corregirla antes de guardar.
           </div>
         )}
-        {calculatedPrescription && input.jurisdiccion && (
+        {calculatedPrescription && prescriptionRule && (
           <div className="notice mt-3" role="status">
-            {input.dateOfDischargeType === "ETA" ? "Prescripción estimada según ETA" : "Prescripción calculada desde la descarga"}: <strong>{new Date(`${calculatedPrescription}T00:00:00`).toLocaleDateString("es-CL")}</strong> · {PRESCRIPTION_RULES[input.jurisdiccion].scope} · {PRESCRIPTION_RULES[input.jurisdiccion].years} año{PRESCRIPTION_RULES[input.jurisdiccion].years === 1 ? "" : "s"}.
+            {input.dateOfDischargeType === "ETA" ? "Prescripción estimada según ETA" : "Prescripción calculada desde la descarga"}: <strong>{new Date(`${calculatedPrescription}T00:00:00`).toLocaleDateString("es-CL")}</strong> · {prescriptionRule.scope}.
           </div>
         )}
         <div className="grid gap-4 md:grid-cols-3">
@@ -1288,6 +1297,10 @@ function NewCasePage() {
           </Field>
           <Field label="CS Claim No">
             <input className="input" value={input.csClaimNo || ""} onChange={(event) => update("csClaimNo", event.target.value)} />
+          </Field>
+          <Field label="Fecha de recepción *">
+            <input className="input" type="date" value={input.fechaRecepcion || ""} onChange={(event) => update("fechaRecepcion", event.target.value)} />
+            <small className="mt-1 block text-xs text-slate-500">Define el año de la referencia y el inicio de la memoria del caso.</small>
           </Field>
           <Field label="Asegurado *">
             <input className="input" value={input.assured || ""} onChange={(event) => update("assured", event.target.value)} />
@@ -1320,18 +1333,26 @@ function NewCasePage() {
               <option value="ETA">ETA estimada</option>
             </select>
           </Field>
+          <Field label="Modo de transporte *">
+            <select className="input" value={input.modoTransporte || "Marítimo"} onChange={(event) => update("modoTransporte", event.target.value as TransportMode)}>
+              <option value="Marítimo">Marítimo</option>
+              <option value="Terrestre">Terrestre · 6 meses</option>
+              <option value="Aéreo">Aéreo · 2 años</option>
+            </select>
+          </Field>
           <Field label="Inspector">
             <input className="input" value={input.surveyor || ""} onChange={(event) => update("surveyor", event.target.value)} />
           </Field>
           <Field label="Monto reclamado">
             <input className="input" type="number" min="0" value={input.claimAmount || ""} onChange={(event) => update("claimAmount", event.target.value)} />
           </Field>
-          <Field label="Jurisdicción *">
+          <Field label={input.modoTransporte === "Marítimo" ? "Jurisdicción marítima *" : "Jurisdicción marítima (opcional)"}>
             <select className="input" value={input.jurisdiccion || ""} onChange={(event) => update("jurisdiccion", event.target.value as Jurisdiccion)}>
-              <option value="">Seleccionar manualmente</option>
+              <option value="">{input.modoTransporte === "Marítimo" ? "Seleccionar manualmente" : "No aplica para este transporte"}</option>
               <option value="LaHaya">La Haya · 1 año desde descarga</option>
               <option value="Hamburgo">Hamburgo · 2 años desde descarga (Chile/Perú)</option>
             </select>
+            <small className="mt-1 block text-xs text-slate-500">Para terrestre y aéreo se usa el plazo legal del modo de transporte.</small>
           </Field>
           <Field label="Causa de daño">
             <input className="input" value={input.causaDano || ""} onChange={(event) => update("causaDano", event.target.value)} placeholder="Temperatura, golpe, falta..." />
@@ -1400,10 +1421,14 @@ function CaseDetailPage() {
   const [editReferenceReason, setEditReferenceReason] = useState("");
   const [editDateOfDischarge, setEditDateOfDischarge] = useState("");
   const [editDateType, setEditDateType] = useState<DischargeDateType>("Real");
+  const [editFechaRecepcion, setEditFechaRecepcion] = useState("");
+  const [editModoTransporte, setEditModoTransporte] = useState<TransportMode>("Marítimo");
   const [editJurisdiccion, setEditJurisdiccion] = useState<Jurisdiccion | "">("");
   const [editError, setEditError] = useState("");
   const [inspectorDraft, setInspectorDraft] = useState(caso?.inspectorAsignado || "");
   const [inspectorNotice, setInspectorNotice] = useState("");
+  const [exceptionalTransferReason, setExceptionalTransferReason] = useState("");
+  const [exceptionalTransferAcknowledged, setExceptionalTransferAcknowledged] = useState(false);
   if (!caso) {
     return (
       <AppShell>
@@ -1422,7 +1447,7 @@ function CaseDetailPage() {
   const calculo = calculosPerdida.find((item) => item.casoId === caso.id);
   const events = bitacora.filter((event) => event.casoId === caso.id).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   const pres = prescriptionStatus(caso);
-  const referenceMismatch = referencePrescriptionMismatch(caso.id, caso.dateOfDischarge, caso.jurisdiccion);
+  const referenceMismatch = referencePrescriptionMismatch(caso.id, caso.dateOfDischarge, caso.jurisdiccion, caso.modoTransporte);
   const staleDays = daysWithoutMovement(caso, bitacora);
   const inactivity = inactivityAlert(caso, bitacora);
   const lastMovement = lastMovementAt(caso, bitacora);
@@ -1434,8 +1459,9 @@ function CaseDetailPage() {
   const canAdvance = nextStatus !== caso.estado;
   const isInspector = usuario.role === "Inspector";
   const activeTab = isInspector ? "inspeccion" : tab;
-  const editReferenceMismatch = referencePrescriptionMismatch(editReference, editDateOfDischarge, editJurisdiccion || undefined);
-  const editCalculatedPrescription = calculatePrescription(editDateOfDischarge, editJurisdiccion || undefined);
+  const editReferenceMismatch = referencePrescriptionMismatch(editReference, editDateOfDischarge, editJurisdiccion || undefined, editModoTransporte);
+  const editCalculatedPrescription = calculatePrescription(editDateOfDischarge, editJurisdiccion || undefined, editModoTransporte);
+  const editPrescriptionRule = prescriptionRuleFor(editJurisdiccion || undefined, editModoTransporte);
 
   const changeTab = (next: string) => {
     setTab(next);
@@ -1452,20 +1478,25 @@ function CaseDetailPage() {
   };
   const openTransfer = (destination: TransferDestination) => {
     generateReviewReport(caso.id, destination);
+    setExceptionalTransferReason("");
+    setExceptionalTransferAcknowledged(false);
     setShowTransfer(destination === "FIS" ? "Traspasado a FIS" : "Traspasado a Lawgistic");
   };
   const confirmTransfer = () => {
     if (!showTransfer) return;
-    if (!caso.informeRevision?.ready) {
-      setNotice("El traspaso está bloqueado: primero debes resolver las observaciones del informe de revisión.");
-      setShowTransfer(null);
+    const isExceptional = !caso.informeRevision?.ready;
+    if (isExceptional && (!exceptionalTransferAcknowledged || exceptionalTransferReason.trim().length < 10)) {
+      setNotice("Confirma la autorización y registra un motivo de al menos 10 caracteres para continuar con un traspaso incompleto.");
       return;
     }
     const destination = showTransfer.replace("Traspasado a ", "");
     const result = transitionCase(
       caso.id,
       showTransfer,
-      `Caso traspasado a ${destination}. Informe de revisión listo. El expediente permanece editable por el Handler responsable.`
+      isExceptional
+        ? `Caso traspasado excepcionalmente a ${destination}. El expediente queda incompleto para completar antecedentes en la siguiente etapa.`
+        : `Caso traspasado a ${destination}. Informe de revisión listo. El expediente permanece editable por el Handler responsable.`,
+      isExceptional ? exceptionalTransferReason : undefined
     );
     if (!result.ok) {
       setNotice(result.error || "No se pudo completar el traspaso.");
@@ -1473,6 +1504,8 @@ function CaseDetailPage() {
       return;
     }
     setShowTransfer(null);
+    setExceptionalTransferReason("");
+    setExceptionalTransferAcknowledged(false);
   };
   const submitRevert = () => {
     const result = revertCase(caso.id, revertStatus, revertReason);
@@ -1484,6 +1517,8 @@ function CaseDetailPage() {
     setEditReferenceReason("");
     setEditDateOfDischarge(caso.dateOfDischarge || "");
     setEditDateType(caso.dateOfDischargeType || "Real");
+    setEditFechaRecepcion(caso.fechaRecepcion || caso.createdAt.slice(0, 10));
+    setEditModoTransporte(caso.modoTransporte || "Marítimo");
     setEditJurisdiccion(caso.jurisdiccion || "");
     setEditError("");
     setIsEditingCase(true);
@@ -1516,10 +1551,20 @@ function CaseDetailPage() {
       setEditError("La fecha efectiva no puede ser futura. Selecciona ETA si corresponde.");
       return;
     }
+    if (editFechaRecepcion && editFechaRecepcion > today) {
+      setEditError("La fecha de recepción no puede ser futura.");
+      return;
+    }
+    if (!editModoTransporte || (editModoTransporte === "Marítimo" && !editJurisdiccion)) {
+      setEditError("Selecciona el modo de transporte y la jurisdicción marítima cuando corresponda.");
+      return;
+    }
     const result = updateCaseDetails(caso.id, {
       id: nextReference,
       dateOfDischarge: editDateOfDischarge || undefined,
       dateOfDischargeType: editDateOfDischarge ? editDateType : undefined,
+      fechaRecepcion: editFechaRecepcion || undefined,
+      modoTransporte: editModoTransporte,
       jurisdiccion: editJurisdiccion || undefined
     }, editReferenceReason || undefined);
     if (!result.ok) {
@@ -1573,6 +1618,11 @@ function CaseDetailPage() {
           {canWrite && isTransferred && (
             <p className="notice">Caso traspasado: el cambio de estado quedó registrado y el expediente sigue editable por el Handler responsable.</p>
           )}
+          {caso.traspasoExcepcional && (
+            <p className="notice" role="status">
+              Traspaso excepcional autorizado por <strong>{caso.traspasoExcepcional.authorizedBy}</strong> el {new Date(caso.traspasoExcepcional.authorizedAt).toLocaleString("es-CL")}. Pendientes conservados: {caso.traspasoExcepcional.pendingDocuments.join(", ") || "ninguno"}.
+            </p>
+          )}
           {usuario.role === "Handler" && !canWrite && (
             <p className="notice">
               Este caso está asignado a <strong>{caso.claimHandler}</strong>. Selecciona ese Handler para editarlo.
@@ -1581,17 +1631,25 @@ function CaseDetailPage() {
           {usuario.role === "Inspector" && (
             <p className="notice">Caso asignado a <strong>{caso.inspectorAsignado}</strong>. Esta vista permite registrar la inspección.</p>
           )}
-          {canMutateCase && (
+          {canMutateCase && !isTransferred && (
             <>
               {caso.estado !== "Cálculo completo" ? (
-                <button
-                  className="button-primary"
-                  onClick={actionPrimary}
-                  disabled={!canAdvance}
-                  title={canAdvance ? `Avanzar a ${nextStatus}` : "Completa los documentos y el cálculo antes de avanzar."}
-                >
-                  <Check size={17} /> {canAdvance ? `Avanzar a ${nextStatus}` : "Revisar pendientes"}
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    className="button-primary"
+                    onClick={actionPrimary}
+                    disabled={!canAdvance}
+                    title={canAdvance ? `Avanzar a ${nextStatus}` : "Completa los documentos y el cálculo antes de avanzar."}
+                  >
+                    <Check size={17} /> {canAdvance ? `Avanzar a ${nextStatus}` : "Revisar pendientes"}
+                  </button>
+                  <button className="button-secondary" onClick={() => openTransfer("FIS")} title="Permite derivar con autorización y pendientes visibles.">
+                    Traspaso excepcional a FIS
+                  </button>
+                  <button className="button-secondary" onClick={() => openTransfer("Lawgistic")} title="Permite derivar con autorización y pendientes visibles.">
+                    Traspaso excepcional a Lawgistic
+                  </button>
+                </div>
               ) : (
                 <div className="flex gap-2">
                   <button className="button-primary" onClick={() => openTransfer("FIS")}>Traspasar a FIS</button>
@@ -1654,9 +1712,9 @@ function CaseDetailPage() {
               La referencia usa el período <strong>{editReferenceMismatch.currentPeriod}</strong>, pero la fecha y jurisdicción indican prescripción en <strong>{editReferenceMismatch.expectedPeriod}</strong>. Si la fecha real cambió, corrige la referencia antes de guardar.
             </div>
           )}
-          {editCalculatedPrescription && editJurisdiccion && (
+          {editCalculatedPrescription && editPrescriptionRule && (
             <div className="notice" role="status">
-              {editDateType === "ETA" ? "Prescripción estimada según ETA" : "Prescripción calculada desde la descarga"}: <strong>{new Date(`${editCalculatedPrescription}T00:00:00`).toLocaleDateString("es-CL")}</strong> · {PRESCRIPTION_RULES[editJurisdiccion].scope}.
+              {editDateType === "ETA" ? "Prescripción estimada según ETA" : "Prescripción calculada desde la descarga"}: <strong>{new Date(`${editCalculatedPrescription}T00:00:00`).toLocaleDateString("es-CL")}</strong> · {editPrescriptionRule.scope}.
             </div>
           )}
           <div className="grid gap-4 md:grid-cols-2">
@@ -1672,9 +1730,20 @@ function CaseDetailPage() {
                 </select>
               </Field>
             )}
-            <Field label="Jurisdicción">
+            <Field label="Fecha de recepción *">
+              <input className="input" type="date" value={editFechaRecepcion} onChange={(event) => setEditFechaRecepcion(event.target.value)} />
+              <small className="mt-1 block text-xs text-slate-500">El año de la referencia se basa en esta fecha.</small>
+            </Field>
+            <Field label="Modo de transporte *">
+              <select className="input" value={editModoTransporte} onChange={(event) => setEditModoTransporte(event.target.value as TransportMode)}>
+                <option value="Marítimo">Marítimo</option>
+                <option value="Terrestre">Terrestre · 6 meses</option>
+                <option value="Aéreo">Aéreo · 2 años</option>
+              </select>
+            </Field>
+            <Field label="Jurisdicción marítima">
               <select className="input" value={editJurisdiccion} onChange={(event) => setEditJurisdiccion(event.target.value as Jurisdiccion | "")}>
-                <option value="">Sin definir</option>
+                <option value="">{editModoTransporte === "Marítimo" ? "Seleccionar manualmente" : "No aplica para este transporte"}</option>
                 <option value="LaHaya">La Haya · 1 año desde descarga</option>
                 <option value="Hamburgo">Hamburgo · 2 años desde descarga (Chile/Perú)</option>
               </select>
@@ -1700,7 +1769,7 @@ function CaseDetailPage() {
         <CaseSummaryMetric
           label="Riesgo de prescripción"
           value={pres.label}
-          detail={caso.fechaPrescripcion ? `${caso.dateOfDischargeType === "ETA" ? "Estimación según ETA · vence" : "Vence"} ${new Date(caso.fechaPrescripcion).toLocaleDateString("es-CL")}` : "Fecha o jurisdicción pendiente"}
+          detail={caso.fechaPrescripcion ? `${caso.dateOfDischargeType === "ETA" ? "Estimación según ETA · vence" : "Vence"} ${new Date(caso.fechaPrescripcion).toLocaleDateString("es-CL")}` : "Fecha o regla de prescripción pendiente"}
           icon={<AlertTriangle size={19} />}
           tone={pres.tone === "danger" ? "danger" : pres.tone === "warn" ? "warn" : "ok"}
         />
@@ -1747,8 +1816,27 @@ function CaseDetailPage() {
           </p>
           {caso.informeRevision && <ReviewReportContent report={caso.informeRevision} compact />}
           {caso.informeRevision && !caso.informeRevision.ready && (
-            <div className="form-error mt-4" role="alert">
-              Traspaso bloqueado: resuelve las {caso.informeRevision.pendingActions.length} observaciones del informe antes de derivar el caso.
+            <div className="mt-4 space-y-3" role="alert">
+              <div className="notice">
+                El expediente tiene {caso.informeRevision.pendingActions.length} observaciones. Puedes derivarlo excepcionalmente para solicitar extensión, judicializar o interrumpir prescripción, dejando los pendientes visibles para la siguiente etapa.
+              </div>
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={exceptionalTransferAcknowledged}
+                  onChange={(event) => setExceptionalTransferAcknowledged(event.target.checked)}
+                />
+                <span>Autorizo el traspaso excepcional del expediente incompleto al destino seleccionado.</span>
+              </label>
+              <Field label="Motivo de autorización *">
+                <textarea
+                  className="input min-h-24"
+                  value={exceptionalTransferReason}
+                  onChange={(event) => setExceptionalTransferReason(event.target.value)}
+                  placeholder="Ej.: Caso próximo a prescribir; se deriva para solicitar extensión y completar antecedentes."
+                />
+                <small className="mt-1 block text-xs text-slate-500">Se guardará con usuario, fecha, pendientes y acciones del informe.</small>
+              </Field>
             </div>
           )}
           <div className="mt-5 flex justify-end gap-3">
@@ -1761,8 +1849,13 @@ function CaseDetailPage() {
                 >
                   <Download size={16} /> Descargar informe
                 </button>
-                <button className="button-primary" disabled={!caso.informeRevision.ready} onClick={confirmTransfer} title={caso.informeRevision.ready ? "Confirmar traspaso" : "Resuelve las observaciones antes de traspasar"}>
-                  <Check size={16} /> Confirmar traspaso
+                <button
+                  className="button-primary"
+                  disabled={!caso.informeRevision.ready && (!exceptionalTransferAcknowledged || exceptionalTransferReason.trim().length < 10)}
+                  onClick={confirmTransfer}
+                  title={caso.informeRevision.ready ? "Confirmar traspaso" : "Autoriza el traspaso excepcional con motivo"}
+                >
+                  <Check size={16} /> {caso.informeRevision.ready ? "Confirmar traspaso" : "Autorizar y traspasar"}
                 </button>
               </>
             )}
@@ -2259,7 +2352,7 @@ function AnalysisTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<ty
 }
 
 function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calculo?: CalculoPerdida; canWrite: boolean }) {
-  const { saveCalculation, calculationMethods } = useDemoStore();
+  const { saveCalculation, calculationMethods, documentos } = useDemoStore();
   const [form, setForm] = useState<CalculoPerdida>(() => calculo
     ? {
         ...calculo,
@@ -2280,12 +2373,8 @@ function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calculo?: Cal
   const updateNumber = (key: keyof CalculoPerdida, value: string) => {
     setForm((current) => ({ ...current, [key]: value === "" ? undefined : Number(value) }));
   };
-  const updateRubro = (index: number, patch: Partial<RubroAdicional>) => {
-    setForm((current) => ({
-      ...current,
-      rubrosAdicionales: current.rubrosAdicionales.map((rubro, itemIndex) => (itemIndex === index ? { ...rubro, ...patch } : rubro))
-    }));
-  };
+  const firmInvoiceAvailable = documentos.some((documento) => documento.casoId === caso.id && documento.tipoDocumento === "Factura de exportación" && documento.disponible);
+  const firmCreditNoteAvailable = documentos.some((documento) => documento.casoId === caso.id && documento.tipoDocumento === "Nota de crédito" && documento.disponible);
   const save = (event: FormEvent) => {
     event.preventDefault();
     const result = saveCalculation(computed);
@@ -2339,7 +2428,7 @@ function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calculo?: Cal
           <h3>Cálculo de pérdida</h3>
           <span>{canWrite ? "Editable" : "Solo lectura"}</span>
         </div>
-        {!canWrite && <ReadonlyBanner text={caso.estado.includes("Traspasado") ? "El caso fue traspasado; la edición de todo el expediente está bloqueada." : undefined} />}
+        {!canWrite && <ReadonlyBanner text={caso.estado.includes("Traspasado") ? "El caso fue traspasado; conserva lectura y solo su Handler responsable puede editar el expediente." : undefined} />}
         <div className="notice">
           Cada resultado es una recomendación preliminar. En los métodos 1 y 2 ingresa valores brutos, no netos. El método 3 compara la factura de exportación con la venta neta consolidada de destino. Si el resultado es negativo, se conserva para auditoría y el monto reclamable queda en cero.
         </div>
@@ -2428,6 +2517,21 @@ function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calculo?: Cal
 
       {form.ventaAFirme ? (
         <div className="panel">
+          <div className="notice mb-4">
+            La venta a firme se calcula únicamente con el valor de la nota de crédito. La factura de exportación debe identificar expresamente la condición “a firme”.
+          </div>
+          <label className="checkbox-field mb-4">
+            <input
+              type="checkbox"
+              disabled={!canWrite}
+              checked={Boolean(form.ventaAFirmeConfirmada)}
+              onChange={(event) => setForm((current) => ({ ...current, ventaAFirmeConfirmada: event.target.checked }))}
+            />
+            Confirmo que la factura de exportación indica que la venta es a firme
+          </label>
+          <div className="notice mb-4">
+            Respaldo detectado: factura {firmInvoiceAvailable ? "disponible" : "faltante"} · nota de crédito {firmCreditNoteAvailable ? "disponible" : "faltante"}.
+          </div>
           <Field label="Valor nota de crédito">
             <input className="input" disabled={!canWrite} type="number" value={form.notaCreditoValor || ""} onChange={(event) => updateNumber("notaCreditoValor", event.target.value)} placeholder={`Monto en ${form.monedaOrigen || form.moneda}`} />
           </Field>
@@ -2477,26 +2581,9 @@ function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calculo?: Cal
 
       <div className="panel">
         <div className="panel-title">
-          <h3>Rubros adicionales y justificación</h3>
+          <h3>Regla contractual y justificación</h3>
         </div>
-        <div className="space-y-3">
-          {form.rubrosAdicionales.map((rubro, index) => (
-            <div className="grid gap-3 md:grid-cols-[1fr_180px_44px]" key={index}>
-              <input className="input" disabled={!canWrite} value={rubro.concepto} onChange={(event) => updateRubro(index, { concepto: event.target.value })} placeholder="Concepto" />
-              <input className="input" disabled={!canWrite} type="number" value={rubro.monto} onChange={(event) => updateRubro(index, { monto: Number(event.target.value) })} />
-              {canWrite && (
-                <button type="button" className="icon-button" onClick={() => setForm((current) => ({ ...current, rubrosAdicionales: current.rubrosAdicionales.filter((_, itemIndex) => itemIndex !== index) }))}>
-                  <X size={16} />
-                </button>
-              )}
-            </div>
-          ))}
-          {canWrite && (
-            <button type="button" className="button-secondary small" onClick={() => setForm((current) => ({ ...current, rubrosAdicionales: [...current.rubrosAdicionales, { concepto: "", monto: 0 }] }))}>
-              <Plus size={15} /> Agregar rubro
-            </button>
-          )}
-        </div>
+        <p className="notice">Los costos desglosados no se agregan como rubros adicionales al resultado contractual. Los Métodos 1 y 2 utilizan valores brutos; el Método 3 utiliza venta neta en destino; la venta a firme utiliza la nota de crédito. Los rubros históricos se conservan solo como metadata de auditoría.</p>
         {!form.ventaAFirme && (
           <Field label="Justificación del método seleccionado">
             <textarea className="input min-h-28" disabled={!canWrite} value={form.justificacionSeleccion || ""} onChange={(event) => setForm((current) => ({ ...current, justificacionSeleccion: event.target.value }))} />
@@ -2650,7 +2737,7 @@ function ReviewReportContent({ report, compact = false }: { report: ReviewReport
           <div className="panel-title">
             <div>
               <h4>Checklist de cierre local</h4>
-              <p>Las mismas guardas aplican al traspaso extrajudicial a FIS y al judicial a Lawgistic.</p>
+              <p>El traspaso normal exige este checklist. Si hay urgencia de prescripción, el Handler puede usar la vía excepcional con autorización registrada.</p>
             </div>
             <span>{completedGates}/{closureChecklist.length || 5} cumplidas</span>
           </div>
@@ -3370,7 +3457,7 @@ function ManualPage() {
     {
       title: "9. Alertas de prescripción",
       body:
-        `Calcula la fecha de prescripción solo si existen fecha de descarga y jurisdicción explícita. Para este alcance marítimo usa La Haya (1 año desde descarga) o Hamburgo (2 años desde descarga para Chile/Perú). Usa semáforo verde, ámbar o rojo; una ETA se muestra siempre como estimación y exige confirmar la fecha real antes del traspaso. La alerta de inactividad usa días corridos en Santiago y se activa al cumplir ${INACTIVITY_ALERT_DAYS} días. Reinician el contador la carga o solicitud de documentos, el cálculo y el cambio de estado/traspaso; ver la pantalla o corregir datos no lo reinicia. Se muestra en plataforma diariamente al Handler responsable y Gerente; agrega correo cuando el caso está cerca de prescribir o alcanza 20 días. Los envíos, lecturas y cierres quedan en bitácora; solo Gerente puede cerrar o silenciar. En este demo el envío por plataforma/correo se registra como simulado; el envío real requiere un servicio backend.`
+        `Calcula la fecha de prescripción desde la fecha de descarga o ETA, según el modo de transporte y la jurisdicción marítima aplicable. El modo terrestre usa 6 meses, el aéreo 2 años y el marítimo aplica La Haya (1 año) o Hamburgo (2 años para Chile/Perú). La fecha de recepción define el año de la referencia y los últimos cuatro dígitos se asignan incrementalmente por llegada. Usa semáforo verde, ámbar o rojo; una ETA se muestra siempre como estimación y exige confirmar la fecha real antes del traspaso. La alerta de inactividad usa días corridos en Santiago y se activa al cumplir ${INACTIVITY_ALERT_DAYS} días. Reinician el contador la carga o solicitud de documentos, el cálculo y el cambio de estado/traspaso; ver la pantalla o corregir datos no lo reinicia. Se muestra en plataforma diariamente al Handler responsable y Gerente; agrega correo cuando el caso está cerca de prescribir o alcanza 20 días. Los envíos, lecturas y cierres quedan en bitácora; solo Gerente puede cerrar o silenciar. En este demo el envío por plataforma/correo se registra como simulado; el envío real requiere un servicio backend.`
     },
     {
       title: "10. Cartas automatizadas",
@@ -3390,7 +3477,7 @@ function ManualPage() {
     {
       title: "13. Informe de revisión y traspaso",
       body:
-        "Desde la pestaña Informe, el Handler responsable selecciona FIS para recupero extrajudicial o Lawgistic para recupero judicial y genera un resumen con documentación disponible y pendiente, causa propuesta, mérito preliminar y cálculo seleccionado. Ambos destinos usan el mismo checklist contractual: datos mínimos del embarque, documentación mínima, causa válida confirmada, monto calculado, prescripción determinada y aprobación del Handler. AoR y reporte de inspección pueden quedar pendientes como excepciones explícitas; un mérito bajo no bloquea el traspaso. El informe queda en el historial y se puede descargar. El traspaso es un cambio de estado, no una entrega a otro sistema ni un bloqueo de lectura: el expediente sigue editable por el Handler responsable. Gerencia puede revertirlo con motivo obligatorio."
+        "Desde la pestaña Informe, el Handler responsable selecciona FIS para recupero extrajudicial o Lawgistic para recupero judicial y genera un resumen con documentación disponible y pendiente, causa propuesta, mérito preliminar y cálculo seleccionado. El traspaso normal exige el checklist completo. Si el caso está próximo a prescribir o requiere pedir extensión, judicializar o interrumpir la prescripción, el Handler puede autorizar un traspaso excepcional registrando motivo, usuario, fecha, pendientes y acciones siguientes. El informe queda en el historial y se puede descargar. El traspaso es un cambio de estado, no una entrega a otro sistema ni un bloqueo de lectura: el expediente sigue editable por el Handler responsable. Gerencia puede revertirlo con motivo obligatorio."
     },
     {
       title: "14. Memoria histórica",
@@ -3482,11 +3569,11 @@ function ManualPage() {
             <ul className="manual-list">
               <li>No se guardan archivos reales, solo metadata.</li>
               <li>El aviso de inactividad se activa con más de 15 días desde el último evento válido de bitácora; excluye casos traspasados y se muestra al handler responsable y a Gerente/CEO.</li>
-              <li>No hay jurisdicción por defecto.</li>
-              <li>No hay prescripción sin fecha de descarga y jurisdicción.</li>
-              <li>La ETA no reemplaza la fecha real de descarga para cerrar y traspasar un caso.</li>
+              <li>No hay jurisdicción marítima por defecto.</li>
+              <li>No hay prescripción sin fecha de descarga y regla de transporte aplicable.</li>
+              <li>La ETA no reemplaza la fecha real de descarga para el traspaso normal; un caso con ETA puede derivarse excepcionalmente con autorización y motivo registrado.</li>
               <li>No hay cálculo guardado sin justificación suficiente.</li>
-              <li>El traspaso cambia el estado, pero no bloquea la edición posterior del expediente por su Handler responsable.</li>
+              <li>El traspaso cambia el estado, pero no bloquea la lectura ni la edición posterior del expediente por su Handler responsable.</li>
             </ul>
           </div>
         </div>

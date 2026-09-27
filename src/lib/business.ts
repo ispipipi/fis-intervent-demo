@@ -12,7 +12,8 @@ import {
   InactivityAlertChannel,
   InactivityAlertState,
   Jurisdiccion,
-  NewCaseInput
+  NewCaseInput,
+  TransportMode
 } from "../types/domain";
 
 export const STORAGE_PREFIX = "fis-intervent-demo:";
@@ -190,16 +191,42 @@ export function renamedFile(referenceNo: string, type: DocumentType, originalNam
   return `${safeReference}_${abbreviateDocumentType(type)}.${extension}`;
 }
 
-export const PRESCRIPTION_RULES: Record<Jurisdiccion, { label: string; years: number; scope: string }> = {
+type PrescriptionRule = { label: string; months?: number; years?: number; scope: string };
+
+export const PRESCRIPTION_RULES: Record<Jurisdiccion, PrescriptionRule> = {
   LaHaya: { label: "La Haya", years: 1, scope: "Regla marítima general" },
   Hamburgo: { label: "Hamburgo", years: 2, scope: "Chile/Perú marítimo" }
 };
 
-export function calculatePrescription(dateOfDischarge?: string, jurisdiccion?: Jurisdiccion): string | undefined {
-  if (!dateOfDischarge || !jurisdiccion) return undefined;
+export const TRANSPORT_PRESCRIPTION_RULES: Record<TransportMode, PrescriptionRule> = {
+  Marítimo: { label: "Marítimo", scope: "Se aplica el convenio marítimo seleccionado" },
+  Terrestre: { label: "Terrestre", months: 6, scope: "Plazo terrestre de 6 meses" },
+  Aéreo: { label: "Aéreo", years: 2, scope: "Plazo aéreo de 2 años" }
+};
+
+export function prescriptionRuleFor(jurisdiccion?: Jurisdiccion, modoTransporte: TransportMode = "Marítimo") {
+  if (modoTransporte !== "Marítimo") return TRANSPORT_PRESCRIPTION_RULES[modoTransporte];
+  return jurisdiccion ? PRESCRIPTION_RULES[jurisdiccion] : undefined;
+}
+
+export function calculatePrescription(
+  dateOfDischarge?: string,
+  jurisdiccion?: Jurisdiccion,
+  modoTransporte: TransportMode = "Marítimo"
+): string | undefined {
+  if (!dateOfDischarge) return undefined;
+  const rule = prescriptionRuleFor(jurisdiccion, modoTransporte);
+  if (!rule) return undefined;
   const base = new Date(`${dateOfDischarge}T00:00:00`);
   if (Number.isNaN(base.getTime())) return undefined;
-  base.setFullYear(base.getFullYear() + PRESCRIPTION_RULES[jurisdiccion].years);
+  if (rule.months) {
+    const originalDay = base.getDate();
+    base.setDate(1);
+    base.setMonth(base.getMonth() + rule.months);
+    const lastDayOfTargetMonth = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
+    base.setDate(Math.min(originalDay, lastDayOfTargetMonth));
+  }
+  if (rule.years) base.setFullYear(base.getFullYear() + rule.years);
   return base.toISOString().slice(0, 10);
 }
 
@@ -217,10 +244,10 @@ export function prescriptionStatus(caso: Caso): {
   if (!caso.dateOfDischarge) {
     return { label: "Falta fecha de descarga", tone: "missing" };
   }
-  if (!caso.jurisdiccion) {
+  if (caso.modoTransporte === "Marítimo" && !caso.jurisdiccion) {
     return { label: "Jurisdicción sin confirmar", tone: "missing" };
   }
-  const fechaPrescripcion = calculatePrescription(caso.dateOfDischarge, caso.jurisdiccion);
+  const fechaPrescripcion = caso.fechaPrescripcion || calculatePrescription(caso.dateOfDischarge, caso.jurisdiccion, caso.modoTransporte);
   if (!fechaPrescripcion) return { label: "No calculable", tone: "missing" };
   const days = daysBetween(fechaPrescripcion);
   const etaPrefix = caso.dateOfDischargeType === "ETA" ? "ETA · " : "";
@@ -300,13 +327,14 @@ export function inactivityAlert(
 }
 
 export function hasRequiredMinimum(input: NewCaseInput): boolean {
+  const modoTransporte = input.modoTransporte || "Marítimo";
   return Boolean(
     input.claimHandler &&
       input.assured &&
       input.opponent &&
       input.vessel &&
       input.dateOfDischarge &&
-      input.jurisdiccion
+      (modoTransporte !== "Marítimo" || input.jurisdiccion)
   );
 }
 
@@ -391,10 +419,11 @@ export function nextCaseReferenceSequence(cases: Pick<Caso, "id">[]): string {
 export function referencePrescriptionMismatch(
   reference: string | undefined,
   dateOfDischarge: string | undefined,
-  jurisdiccion: Jurisdiccion | undefined
+  jurisdiccion: Jurisdiccion | undefined,
+  modoTransporte: TransportMode = "Marítimo"
 ) {
   const parts = parseCaseReference(reference);
-  const prescriptionDate = calculatePrescription(dateOfDischarge, jurisdiccion);
+  const prescriptionDate = calculatePrescription(dateOfDischarge, jurisdiccion, modoTransporte);
   if (!parts || !prescriptionDate) return undefined;
   const expectedMonth = prescriptionDate.slice(5, 7);
   const expectedYear = prescriptionDate.slice(2, 4);
@@ -411,10 +440,12 @@ export function referencePrescriptionMismatch(
 export function buildCaseId(input: NewCaseInput, cases: Pick<Caso, "id">[], assignmentDate = new Date()): string {
   if (input.id?.trim()) return input.id.trim().toUpperCase();
   const opponent = resolveCarrierCode(input.opponent);
-  const prescriptionDate = calculatePrescription(input.dateOfDischarge, input.jurisdiccion);
+  const prescriptionDate = calculatePrescription(input.dateOfDischarge, input.jurisdiccion, input.modoTransporte);
   const prescriptionPeriod = prescriptionDate ? `${prescriptionDate.slice(5, 7)}/${prescriptionDate.slice(2, 4)}` : "00/00";
   const clientPrefix = input.codigoCliente?.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
-  return `PRE-FIS${clientPrefix ? `/${clientPrefix}` : ""}-${opponent}-${assignmentDate.getFullYear()}-${prescriptionPeriod}-${nextCaseReferenceSequence(cases)}`;
+  const receivedAt = input.fechaRecepcion ? new Date(`${input.fechaRecepcion}T00:00:00`) : assignmentDate;
+  const referenceYear = Number.isNaN(receivedAt.getTime()) ? assignmentDate.getFullYear() : receivedAt.getFullYear();
+  return `PRE-FIS${clientPrefix ? `/${clientPrefix}` : ""}-${opponent}-${referenceYear}-${prescriptionPeriod}-${nextCaseReferenceSequence(cases)}`;
 }
 
 export function buildCasoFromInput(input: NewCaseInput, cases: Pick<Caso, "id">[], complete: boolean): Caso {
@@ -436,10 +467,12 @@ export function buildCasoFromInput(input: NewCaseInput, cases: Pick<Caso, "id">[
     placeOfDischarge: input.placeOfDischarge,
     dateOfDischarge: input.dateOfDischarge,
     dateOfDischargeType: input.dateOfDischargeType || "Real",
+    fechaRecepcion: input.fechaRecepcion || now.slice(0, 10),
+    modoTransporte: input.modoTransporte || "Marítimo",
     surveyor: input.surveyor,
     claimAmount: input.claimAmount,
     jurisdiccion: input.jurisdiccion,
-    fechaPrescripcion: calculatePrescription(input.dateOfDischarge, input.jurisdiccion),
+    fechaPrescripcion: calculatePrescription(input.dateOfDischarge, input.jurisdiccion, input.modoTransporte),
     causaDano: input.causaDano,
     tipoCaso: input.tipoCaso,
     resumenCaso: input.resumenCaso,
@@ -640,8 +673,9 @@ export function calculateLoss(input: CalculoPerdida): CalculoPerdida {
       : input.metodoSeleccionado === "3"
         ? metodo3
         : undefined;
-  const rubrosTotal = input.rubrosAdicionales.reduce((sum, rubro) => sum + (convert(rubro.monto) || 0), 0);
-  const selectedResult = selectedBaseResult !== undefined ? round(selectedBaseResult + rubrosTotal, 4) : undefined;
+  // The contractual amount comes only from the selected gross, net, or credit-note input.
+  // Legacy rubros are preserved as metadata but never alter the approved formula.
+  const selectedResult = selectedBaseResult !== undefined ? round(selectedBaseResult, 4) : undefined;
   return {
     ...input,
     metodo1_resultado: metodo1,
@@ -681,7 +715,15 @@ export function nextStatusFromCase(caso: Caso, docs: Documento[], calculo?: Calc
 }
 
 export function hasCasoMinimum(caso: Caso): boolean {
-  return Boolean(caso.claimHandler && caso.assured && caso.opponent && caso.vessel && caso.dateOfDischarge && caso.jurisdiccion);
+  const modoTransporte = caso.modoTransporte || "Marítimo";
+  return Boolean(
+    caso.claimHandler &&
+      caso.assured &&
+      caso.opponent &&
+      caso.vessel &&
+      caso.dateOfDischarge &&
+      (modoTransporte !== "Marítimo" || caso.jurisdiccion)
+  );
 }
 
 export function suggestDamageMerit(

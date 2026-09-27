@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx";
 import { BitacoraEvento, CalculoPerdida, Caso, Documento, HistoricalCase } from "../types/domain";
-import { daysWithoutMovement, documentChecklist, isChecklistItemComplete, prescriptionStatus } from "./business";
+import { daysWithoutMovement, documentChecklist, isChecklistItemComplete, prescriptionRuleFor, prescriptionStatus } from "./business";
 
 type ExportValue = string | number | undefined;
 type ExportRow = Record<string, ExportValue>;
@@ -80,7 +80,10 @@ function caseRows(
       "Lugar de descarga": caso.placeOfDischarge,
       "Fecha de descarga / ETA": dateOnly(caso.dateOfDischarge),
       "Tipo de fecha": caso.dateOfDischargeType || "Real",
+      "Fecha de recepción": dateOnly(caso.fechaRecepcion || caso.createdAt),
+      "Modo de transporte": caso.modoTransporte || "Marítimo",
       "Jurisdicción": caso.jurisdiccion,
+      "Regla de prescripción": prescriptionRuleFor(caso.jurisdiccion, caso.modoTransporte)?.scope,
       "Surveyor / inspector informado": caso.surveyor,
       "Estado del caso": caso.estado,
       "Estado documental": missingChecklist.length > 0 ? "Pendiente" : "Completo",
@@ -100,13 +103,16 @@ function caseRows(
       "Base de prescripción": caso.dateOfDischargeType === "ETA" ? "ETA estimada" : caso.dateOfDischarge ? "Descarga real" : undefined,
       "Alerta prescripción": prescription.label,
       "Días sin movimiento": daysWithoutMovement(caso),
-      "Fecha de recepción": dateOnly(caso.createdAt),
       "Fecha de término / traspaso": dateOnly(endEvent?.timestamp),
       "Gestión": endEvent ? "Finalizada" : "En curso",
       "Duración gestión (días)": daysBetween(caso.createdAt, endEvent?.timestamp) ?? daysBetween(caso.createdAt, new Date().toISOString()),
       "Última actualización": dateLabel(caso.ultimaActualizacion),
       "Destino": caso.informeRevision?.destination,
       "Estado informe": caso.informeRevision?.status,
+      "Traspaso excepcional": caso.traspasoExcepcional ? "Sí" : "No",
+      "Autorizado por traspaso excepcional": caso.traspasoExcepcional?.authorizedBy,
+      "Motivo traspaso excepcional": caso.traspasoExcepcional?.reason,
+      "Pendientes al traspaso excepcional": caso.traspasoExcepcional?.pendingDocuments.join("; "),
       "Actualizaciones": events.length
     };
   });
@@ -125,7 +131,7 @@ function updateRows(casos: Caso[], bitacora: BitacoraEvento[]) {
         "Usuario": event.usuario,
         "Tipo de actualización": event.tipoEvento,
         "Detalle": event.detalle,
-        "Días desde recepción": daysBetween(byId.get(event.casoId)?.createdAt, event.timestamp)
+        "Días desde recepción": daysBetween(byId.get(event.casoId)?.fechaRecepcion || byId.get(event.casoId)?.createdAt, event.timestamp)
       }))
   );
 }

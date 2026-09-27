@@ -29,7 +29,7 @@ export const DEFAULT_CALCULATION_METHODS: CalculationMethodConfig[] = [
     id: "firm",
     title: "Venta a firme · nota de crédito",
     description: "Usa el valor de la nota de crédito cuando la venta fue a firme.",
-    formula: "Valor de nota de crédito + rubros adicionales",
+    formula: "Valor de nota de crédito",
     active: true,
     updatedAt: new Date().toISOString()
   }

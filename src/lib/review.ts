@@ -3,6 +3,7 @@ import {
   isChecklistItemComplete,
   isTransferDocumentRuleSatisfied,
   pendingField,
+  prescriptionRuleFor,
   transferCauseIsConfirmed,
   transferDocumentRules
 } from "./business";
@@ -58,7 +59,10 @@ export function buildReviewReport(
     method && calculo?.montoFinalReclamo !== undefined && (calculo.justificacionSeleccion?.trim().length ?? 0) >= 10
   );
   const prescriptionReady = Boolean(
-    caso.dateOfDischarge && caso.jurisdiccion && caso.fechaPrescripcion && caso.dateOfDischargeType !== "ETA"
+    caso.dateOfDischarge &&
+    prescriptionRuleFor(caso.jurisdiccion, caso.modoTransporte) &&
+    caso.fechaPrescripcion &&
+    caso.dateOfDischargeType !== "ETA"
   );
   const inferredCauseSources = documentos
     .filter((documento) =>
@@ -77,7 +81,7 @@ export function buildReviewReport(
     pendingActions.push("Seleccionar, completar y justificar el cálculo aplicable en la pestaña Cálculo.");
   }
   if (!prescriptionReady && caso.dateOfDischargeType !== "ETA") {
-    pendingActions.push("Completar fecha de descarga y jurisdicción para calcular prescripción.");
+    pendingActions.push("Completar fecha de descarga y la regla de prescripción aplicable.");
   }
   if (caso.dateOfDischargeType === "ETA") {
     pendingActions.push("Confirmar la fecha real de descarga antes del traspaso; la fecha actual es una ETA.");
@@ -131,7 +135,7 @@ export function buildReviewReport(
       id: "prescription",
       label: "Prescripción confirmada",
       status: prescriptionReady ? "Cumplido" as const : "Pendiente" as const,
-      detail: prescriptionReady ? "Calculada desde una fecha real de descarga." : caso.dateOfDischargeType === "ETA" ? "La ETA debe reemplazarse o confirmarse como fecha real." : "Falta fecha de descarga, jurisdicción o fecha de prescripción."
+      detail: prescriptionReady ? "Calculada desde una fecha real de descarga y la regla de transporte aplicable." : caso.dateOfDischargeType === "ETA" ? "La ETA debe reemplazarse o confirmarse como fecha real." : "Falta fecha de descarga, regla de transporte o fecha de prescripción."
     },
     {
       id: "handler-approval",

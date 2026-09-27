@@ -53,6 +53,15 @@ export type LetterApproval = {
   approvedBy: string;
 };
 
+export type ExceptionalTransferAuthorization = {
+  destination: TransferDestination;
+  reason: string;
+  authorizedBy: string;
+  authorizedAt: string;
+  pendingDocuments: string[];
+  pendingActions: string[];
+};
+
 export type CaseStatus =
   | "Datos incompletos"
   | "Preclaim"
@@ -62,6 +71,8 @@ export type CaseStatus =
   | "Traspasado a Lawgistic";
 
 export type Jurisdiccion = "Hamburgo" | "LaHaya";
+
+export type TransportMode = "Marítimo" | "Terrestre" | "Aéreo";
 
 export type DischargeDateType = "Real" | "ETA";
 
@@ -157,6 +168,8 @@ export type Caso = {
   placeOfDischarge?: string;
   dateOfDischarge?: string;
   dateOfDischargeType?: DischargeDateType;
+  fechaRecepcion?: string;
+  modoTransporte?: TransportMode;
   surveyor?: string;
   claimAmount?: number;
   jurisdiccion?: Jurisdiccion;
@@ -169,6 +182,7 @@ export type Caso = {
   conflictosExtraccion?: string[];
   propuestaPerdida?: ExtractedLossProposal;
   informeRevision?: ReviewReport;
+  traspasoExcepcional?: ExceptionalTransferAuthorization;
   estado: CaseStatus;
   alertaInactividad?: InactivityAlertState;
   ultimaActualizacion: string;
@@ -387,6 +401,7 @@ export type CalculoPerdida = {
   metodo3_resultado?: number;
   rubrosAdicionales: RubroAdicional[];
   ventaAFirme: boolean;
+  ventaAFirmeConfirmada?: boolean;
   notaCreditoValor?: number;
   metodoSeleccionado?: "1" | "2" | "3";
   justificacionSeleccion?: string;
@@ -432,6 +447,8 @@ export type NewCaseInput = {
   placeOfDischarge?: string;
   dateOfDischarge?: string;
   dateOfDischargeType?: DischargeDateType;
+  fechaRecepcion?: string;
+  modoTransporte?: TransportMode;
   surveyor?: string;
   claimAmount?: number;
   jurisdiccion?: Jurisdiccion;
