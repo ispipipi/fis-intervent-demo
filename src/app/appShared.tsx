@@ -213,26 +213,43 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (!INSPECTOR_EVOLUTION_ENABLED && usuario.role === "Inspector") return <Navigate to="/" replace />;
   return (
     <div className="app-shell min-h-screen text-ink">
-      <header className="app-header sticky top-0 z-20">
-        <div className="app-header-inner mx-auto max-w-7xl px-5">
-          <Link to="/dashboard" className="brand-lockup">
-            <div className="brand-mark">
-              <span>IP</span>
-            </div>
-            <div className="brand-copy">
-              <p>Intervent <span>Preclaim</span></p>
-              <h1>{shellTitle(usuario.role)}</h1>
-            </div>
-          </Link>
-          <nav className="app-nav hidden items-center gap-1 md:flex">
-            <NavLink to="/dashboard" icon={<LayoutDashboard size={18} />} label="Dashboard" />
-            <NavLink to="/casos" icon={<ClipboardList size={18} />} label="Casos" />
-            {usuario.role !== "Inspector" && <NavLink to="/historial" icon={<History size={18} />} label="Historial" />}
-            {usuario.role === "Handler" && <NavLink to="/casos/nuevo" icon={<Plus size={18} />} label="Nuevo caso" />}
-            {(usuario.role === "Gerente" || usuario.role === "CEO") && <NavLink to="/benchmark" icon={<BarChart3 size={18} />} label="Benchmark" />}
-            {(usuario.role === "Gerente" || usuario.role === "CEO") && <NavLink to="/mantenedores" icon={<Settings size={18} />} label="Mantenedores" />}
-            <NavLink to="/manual" icon={<HelpCircle size={18} />} label="Manual" />
-          </nav>
+      <aside className="app-sidebar">
+        <Link to="/dashboard" className="brand-lockup">
+          <div className="brand-mark" aria-hidden="true"><span>IP</span></div>
+          <div className="brand-copy">
+            <p>Intervent <span>Preclaim</span></p>
+            <h1>Mesa operativa</h1>
+          </div>
+        </Link>
+        <div className="sidebar-context">
+          <span>Workspace</span>
+          <strong>{shellTitle(usuario.role)}</strong>
+        </div>
+        <nav className="app-nav" aria-label="Navegación principal">
+          <span className="nav-section-label">Operación</span>
+          <NavLink to="/dashboard" icon={<LayoutDashboard size={17} />} label="Dashboard" />
+          <NavLink to="/casos" icon={<ClipboardList size={17} />} label="Casos" />
+          {usuario.role === "Handler" && <NavLink to="/casos/nuevo" icon={<Plus size={17} />} label="Nuevo caso" />}
+          {usuario.role !== "Inspector" && <NavLink to="/historial" icon={<History size={17} />} label="Historial" />}
+          {(usuario.role === "Gerente" || usuario.role === "CEO") && (
+            <>
+              <span className="nav-section-label nav-section-label-spaced">Gestión</span>
+              <NavLink to="/benchmark" icon={<BarChart3 size={17} />} label="Benchmark" />
+              <NavLink to="/mantenedores" icon={<Settings size={17} />} label="Mantenedores" />
+            </>
+          )}
+        </nav>
+        <div className="sidebar-bottom">
+          <Link to="/manual" className="sidebar-manual"><HelpCircle size={16} /> Manual de usuario</Link>
+          <span className="sidebar-note">Demo funcional · datos locales</span>
+        </div>
+      </aside>
+      <div className="app-main-frame">
+        <header className="app-topbar">
+          <div className="topbar-context">
+            <span className="topbar-overline">Intervent Preclaim</span>
+            <strong>{shellTitle(usuario.role)}</strong>
+          </div>
           <div className="header-tools">
             <div className="session-controls">
               <span className="role-indicator">{usuario.role}</span>
@@ -267,19 +284,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   }
                 }}
               >
-                <RefreshCcw size={18} />
+                <RefreshCcw size={17} />
               </button>
             </div>
           </div>
-        </div>
-      </header>
-      <main className="app-main mx-auto max-w-7xl px-5 py-7">{children}</main>
-      <footer className="app-footer">
-        <div className="app-footer-inner">
-          <span>Prototipo funcional sobre el MVP · datos simulados persistidos localmente</span>
-          <Link to="/manual">Manual de usuario</Link>
-        </div>
-      </footer>
+        </header>
+        <main className="app-main">{children}</main>
+        <footer className="app-footer">
+          <div className="app-footer-inner">
+            <span>Prototipo funcional sobre el MVP · datos simulados persistidos localmente</span>
+            <Link to="/manual">Manual de usuario</Link>
+          </div>
+        </footer>
+      </div>
     </div>
   );
 }
