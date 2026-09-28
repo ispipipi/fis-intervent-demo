@@ -1,6 +1,5 @@
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import pdfWorker from "pdfjs-dist/legacy/build/pdf.worker.mjs?url";
-import * as XLSX from "xlsx";
 import { classifyDocument, documentClassificationConfidence } from "./business";
 import { CurrencyCode, DocumentType, ExtractedCaseData, ExtractedLossProposal, UploadDraft } from "../types/domain";
 
@@ -162,6 +161,7 @@ function extractLossProposal(text: string, type: DocumentType, fileName: string)
   const method2Actual = extractAmountsAfterLabels(text, ["Gross actual settlement", "Liquidación bruta real", "Liquidacion bruta real", "Liquidación real", "Liquidacion real"]);
   const method3 = extractAmountsAfterLabels(text, ["Export invoice vs destination sale", "Factura exportación", "Factura exportacion"]);
   const destinationSale = extractAmountsAfterLabels(text, ["Venta neta destino", "Venta destino neta", "Net destination sale", "Venta bruta destino", "Venta destino", "Destination sale"]);
+  const hasExplicitMethod3Row = /export invoice vs destination sale|factura(?: de)? exportaci[oó]n\s+vs\s+venta destino/i.test(text);
   const invoiceValue = extractAmount(findLabelValue(text, ["Subtotal", "Invoice total", "Factura de exportación", "Factura de exportacion"]));
   const finalClaim = extractAmount(findLabelValue(text, ["Indicative final claim", "Indicative claim"]));
   const salvage = extractAmountsAfterLabel(text, "Additional salvage adjustment")[0];
@@ -175,11 +175,11 @@ function extractLossProposal(text: string, type: DocumentType, fileName: string)
     tipoCambioFecha,
     tipoCambioFuente,
     metodo1_liquidacionComparativa: method1[0],
-    metodo1_liquidacionReal: method1Actual[0] ?? method1[1],
+    metodo1_liquidacionReal: method1.length > 1 ? method1[1] : method1Actual[0],
     metodo2_valorReporteMercado: method2[0],
-    metodo2_liquidacionReal: method2Actual[0] ?? method2[1],
+    metodo2_liquidacionReal: method2.length > 1 ? method2[1] : method2Actual[0],
     metodo3_valorFactura: method3[0] ?? invoiceValue,
-    metodo3_ventaNetaDestino: destinationSale[0] ?? method3[1],
+    metodo3_ventaNetaDestino: hasExplicitMethod3Row && method3.length > 1 ? method3[1] : destinationSale[0],
     rubrosAdicionales: salvage !== undefined ? [{ concepto: "Salvataje", monto: -Math.abs(salvage) }] : [],
     montoFinalReclamo: finalClaim,
     fuentes: [fileName]
@@ -300,13 +300,15 @@ type ReadContentResult = {
   ocrUsed: boolean;
 };
 
-async function ocrPdf(pdfDocument: Awaited<ReturnType<typeof pdfjsLib.getDocument>>["promise"] extends Promise<infer PdfDocument> ? PdfDocument : never) {
+type PdfDocument = Awaited<ReturnType<typeof pdfjsLib.getDocument>>["promise"] extends Promise<infer Document> ? Document : never;
+
+async function ocrPdf(pdfDocument: PdfDocument, pageNumbers: number[]) {
   if (typeof document === "undefined") return "";
   const { createWorker } = await import("tesseract.js");
   const worker = await createWorker("spa+eng");
   const pages: string[] = [];
   try {
-    for (let pageNumber = 1; pageNumber <= Math.min(pdfDocument.numPages, 5); pageNumber += 1) {
+    for (const pageNumber of pageNumbers) {
       const page = await pdfDocument.getPage(pageNumber);
       const viewport = page.getViewport({ scale: 1.6 });
       const canvas = document.createElement("canvas");
@@ -328,7 +330,7 @@ async function ocrPdf(pdfDocument: Awaited<ReturnType<typeof pdfjsLib.getDocumen
 
 async function readPdf(file: File): Promise<ReadContentResult> {
   const data = new Uint8Array(await file.arrayBuffer());
-  let pdfDocument: Awaited<ReturnType<typeof pdfjsLib.getDocument>>["promise"] extends Promise<infer PdfDocument> ? PdfDocument : never;
+  let pdfDocument: PdfDocument;
   try {
     pdfDocument = await pdfjsLib.getDocument({
       data,
@@ -340,25 +342,29 @@ async function readPdf(file: File): Promise<ReadContentResult> {
   } catch {
     return { text: "", ocrUsed: false };
   }
+  const pages: string[] = [];
+  let pagesNeedingOcr = Array.from({ length: pdfDocument.numPages }, (_, index) => index + 1);
   try {
-    const pages: string[] = [];
+    pagesNeedingOcr = [];
     for (let pageNumber = 1; pageNumber <= pdfDocument.numPages; pageNumber += 1) {
       const page = await pdfDocument.getPage(pageNumber);
       const content = await page.getTextContent();
-      pages.push(content.items.map((item) => ("str" in item ? item.str : "")).join(" "));
+      const pageText = content.items.map((item) => ("str" in item ? item.str : "")).join(" ");
+      pages.push(pageText);
+      if (!pageText.trim()) pagesNeedingOcr.push(pageNumber);
     }
-    const text = pages.join("\n").slice(0, MAX_TEXT_LENGTH);
-    if (text.trim()) return { text, ocrUsed: false };
   } catch {
     // Some PDFs fail during text-layer extraction even though their pages can be rendered.
+    pagesNeedingOcr = Array.from({ length: pdfDocument.numPages }, (_, index) => index + 1);
   }
   let ocrText = "";
   try {
-    ocrText = await ocrPdf(pdfDocument);
+    ocrText = pagesNeedingOcr.length > 0 ? await ocrPdf(pdfDocument, pagesNeedingOcr) : "";
   } catch {
-    return { text: "", ocrUsed: false };
+    ocrText = "";
   }
-  return { text: ocrText, ocrUsed: Boolean(ocrText.trim()) };
+  const text = [...pages, ocrText].filter(Boolean).join("\n").slice(0, MAX_TEXT_LENGTH);
+  return { text, ocrUsed: Boolean(ocrText.trim()) };
 }
 
 async function readImageWithOcr(file: File): Promise<ReadContentResult> {
@@ -375,8 +381,9 @@ async function readImageWithOcr(file: File): Promise<ReadContentResult> {
 }
 
 async function readSpreadsheet(file: File) {
-  const workbook = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: "array" });
-  return workbook.SheetNames.map((sheetName) => XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName])).join("\n").slice(0, MAX_TEXT_LENGTH);
+  const xlsx = await import("xlsx");
+  const workbook = xlsx.read(new Uint8Array(await file.arrayBuffer()), { type: "array" });
+  return workbook.SheetNames.map((sheetName) => xlsx.utils.sheet_to_csv(workbook.Sheets[sheetName])).join("\n").slice(0, MAX_TEXT_LENGTH);
 }
 
 async function readContent(file: File) {
@@ -388,8 +395,7 @@ async function readContent(file: File) {
   return { text: "", ocrUsed: false };
 }
 
-export async function processDocumentFiles(files: File[]): Promise<UploadDraft[]> {
-  return Promise.all(files.map(async (file) => {
+async function processOneDocumentFile(file: File): Promise<UploadDraft> {
     const extension = file.name.split(".").pop()?.toLowerCase();
     const fallbackType = classifyDocument(file.name);
     try {
@@ -399,6 +405,7 @@ export async function processDocumentFiles(files: File[]): Promise<UploadDraft[]
       const datosExtraidos = extractCaseData(textoExtraido, file.name, tipoDocumento);
       return {
         originalName: file.name,
+        file,
         tipoDocumento,
         clasificacionConfianza: documentClassificationConfidence(file.name, textoExtraido, tipoDocumento),
         relativePath: (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name,
@@ -410,6 +417,7 @@ export async function processDocumentFiles(files: File[]): Promise<UploadDraft[]
     } catch {
       return {
         originalName: file.name,
+        file,
         tipoDocumento: fallbackType,
         clasificacionConfianza: documentClassificationConfidence(file.name, "", fallbackType),
         relativePath: (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name,
@@ -417,7 +425,20 @@ export async function processDocumentFiles(files: File[]): Promise<UploadDraft[]
         estadoExtraccion: "parcial"
       } satisfies UploadDraft;
     }
+}
+
+export async function processDocumentFiles(files: File[]): Promise<UploadDraft[]> {
+  const results: Array<UploadDraft | undefined> = new Array(files.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(3, files.length);
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < files.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await processOneDocumentFile(files[index]);
+    }
   }));
+  return results.filter((draft): draft is UploadDraft => Boolean(draft));
 }
 
 export function mergeExtractedData(drafts: UploadDraft[], fallbackReference: string): ExtractedCaseData {

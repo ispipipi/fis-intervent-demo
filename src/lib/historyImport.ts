@@ -1,5 +1,12 @@
-import * as XLSX from "xlsx";
 import { HistoricalCalculationInsight, HistoricalCase, HistoricalCategory, HistoryImportBatch, HistorySheetSummary } from "../types/domain";
+
+type XlsxApi = typeof import("xlsx");
+let xlsxPromise: Promise<XlsxApi> | undefined;
+
+function loadXlsx() {
+  xlsxPromise ||= import("xlsx");
+  return xlsxPromise;
+}
 
 type CellValue = string | number | boolean | Date | null | undefined;
 
@@ -271,15 +278,16 @@ function makeRecord(
 }
 
 export async function parseHistoryWorkbook(file: File): Promise<HistoryImportBatch> {
+  const xlsx = await loadXlsx();
   const buffer = await file.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: "array", cellDates: true, raw: true });
+  const workbook = xlsx.read(buffer, { type: "array", cellDates: true, raw: true });
   const importedAt = new Date().toISOString();
   const batchId = `${file.name}-${importedAt}`.replace(/[^a-zA-Z0-9_.-]+/g, "-");
   const records: HistoricalCase[] = [];
   const sheets: HistorySheetSummary[] = [];
 
   workbook.SheetNames.forEach((sheetName) => {
-    const rows = XLSX.utils.sheet_to_json<CellValue[]>(workbook.Sheets[sheetName], { header: 1, defval: "", raw: true });
+    const rows = xlsx.utils.sheet_to_json<CellValue[]>(workbook.Sheets[sheetName], { header: 1, defval: "", raw: true });
     const headerIndex = findHeaderRow(rows);
     const headers = (rows[headerIndex] || []).map(normalizedHeader);
     let importedRows = 0;

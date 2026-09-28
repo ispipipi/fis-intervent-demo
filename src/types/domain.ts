@@ -271,6 +271,7 @@ export type Documento = {
   nombreArchivo: string;
   originalName?: string;
   pathMock: string;
+  fileStorageKey?: string;
   disponible: boolean;
   estadoDocumental?: DocumentStatus;
   fechaCarga: string;
@@ -365,6 +366,7 @@ export type ReviewGate = {
 
 export type UploadDraft = {
   originalName: string;
+  file?: File;
   tipoDocumento: DocumentType;
   clasificacionConfianza?: "Alta" | "Media" | "Baja";
   relativePath?: string;

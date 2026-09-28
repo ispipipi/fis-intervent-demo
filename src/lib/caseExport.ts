@@ -1,6 +1,15 @@
-import * as XLSX from "xlsx";
+import type { WorkBook } from "xlsx";
 import { BitacoraEvento, CalculoPerdida, Caso, Documento, HistoricalCase } from "../types/domain";
 import { daysWithoutMovement, documentChecklist, isChecklistItemComplete, prescriptionRuleFor, prescriptionStatus } from "./business";
+
+type XlsxApi = typeof import("xlsx");
+let xlsxPromise: Promise<XlsxApi> | undefined;
+let loadedXlsx: XlsxApi | undefined;
+
+function loadXlsx() {
+  xlsxPromise ||= import("xlsx");
+  return xlsxPromise;
+}
 
 type ExportValue = string | number | undefined;
 type ExportRow = Record<string, ExportValue>;
@@ -172,32 +181,72 @@ function historicalRows(records: HistoricalCase[]) {
   }));
 }
 
-function appendSheet(workbook: XLSX.WorkBook, name: string, rows: ExportRow[], widths: number[]) {
-  const sheet = XLSX.utils.json_to_sheet(rows);
+function appendSheet(workbook: WorkBook, name: string, rows: ExportRow[], widths: number[]) {
+  const xlsx = loadedXlsx;
+  if (!xlsx) return;
+  const sheet = xlsx.utils.json_to_sheet(rows);
   sheet["!cols"] = widths.map((wch) => ({ wch }));
-  if (rows.length > 0) sheet["!autofilter"] = { ref: `A1:${XLSX.utils.encode_col(widths.length - 1)}${rows.length + 1}` };
-  XLSX.utils.book_append_sheet(workbook, sheet, name);
+  if (rows.length > 0) sheet["!autofilter"] = { ref: `A1:${xlsx.utils.encode_col(widths.length - 1)}${rows.length + 1}` };
+  xlsx.utils.book_append_sheet(workbook, sheet, name);
 }
 
 function safeFileName(value: string) {
   return value.replace(/[^a-zA-Z0-9_.-]+/g, "-");
 }
 
-export function exportCaseTrackingXlsx(
+function downloadWorkbook(workbook: WorkBook, fileName: string) {
+  const xlsx = loadedXlsx;
+  if (!xlsx) return;
+  const data = xlsx.write(workbook, { bookType: "xlsx", type: "array" });
+  const blob = new Blob([data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = safeFileName(fileName.endsWith(".xlsx") ? fileName : `${fileName}.xlsx`);
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+export async function exportCaseTrackingXlsx(
   casos: Caso[],
   documentos: Documento[],
   calculosPerdida: CalculoPerdida[],
   bitacora: BitacoraEvento[],
   fileName = "seguimiento-preclaim.xlsx"
 ) {
-  const workbook = XLSX.utils.book_new();
+  const xlsx = await loadXlsx();
+  loadedXlsx = xlsx;
+  const workbook = xlsx.utils.book_new();
   appendSheet(workbook, "Seguimiento", caseRows(casos, documentos, calculosPerdida, bitacora), [24, 22, 24, 24, 20, 16, 22, 20, 20, 22, 18, 22, 20, 16, 15, 24, 22, 18, 22, 20, 42, 18, 14, 26, 22, 18, 20, 16, 20, 20, 14, 22, 16, 20, 16, 18, 42, 42]);
   appendSheet(workbook, "Actualizaciones", updateRows(casos, bitacora), [24, 16, 22, 22, 24, 70, 22]);
-  XLSX.writeFile(workbook, safeFileName(fileName.endsWith(".xlsx") ? fileName : `${fileName}.xlsx`));
+  downloadWorkbook(workbook, fileName);
 }
 
-export function exportHistoricalMemoryXlsx(records: HistoricalCase[], fileName = "memoria-historica-preclaim.xlsx") {
-  const workbook = XLSX.utils.book_new();
+export async function exportHistoricalMemoryXlsx(records: HistoricalCase[], fileName = "memoria-historica-preclaim.xlsx") {
+  const xlsx = await loadXlsx();
+  loadedXlsx = xlsx;
+  const workbook = xlsx.utils.book_new();
   appendSheet(workbook, "Memoria histórica", historicalRows(records), [24, 18, 24, 22, 24, 24, 20, 16, 20, 22, 18, 18, 20, 20, 14, 20, 28, 42, 20, 12, 28, 22]);
-  XLSX.writeFile(workbook, safeFileName(fileName.endsWith(".xlsx") ? fileName : `${fileName}.xlsx`));
+  downloadWorkbook(workbook, fileName);
+}
+
+export async function exportUnifiedHistoryXlsx(
+  historical: HistoricalCase[],
+  activeCases: Caso[],
+  documentos: Documento[],
+  calculosPerdida: CalculoPerdida[],
+  bitacora: BitacoraEvento[],
+  fileName = "historial-completo-preclaim.xlsx"
+) {
+  const xlsx = await loadXlsx();
+  loadedXlsx = xlsx;
+  const workbook = xlsx.utils.book_new();
+  const importedRows = historicalRows(historical).map((row) => ({ ...row, "Origen del registro": "Importado" }));
+  const generatedRows = caseRows(activeCases, documentos, calculosPerdida, bitacora).map((row) => ({ ...row, "Origen del registro": "Generado en sistema" }));
+  appendSheet(workbook, "Historial completo", [...importedRows, ...generatedRows], [24, 24, 22, 24, 24, 24, 20, 16, 20, 22, 18, 18, 20, 20, 14, 20, 28, 42, 20, 12, 28, 22, 24, 24, 22, 22, 20, 16, 22, 20, 20, 22, 18, 22, 20, 16, 15, 24, 22, 18, 22, 20, 42, 18, 14, 26, 22, 18, 20, 20, 14, 18, 42, 42]);
+  appendSheet(workbook, "Actualizaciones activas", updateRows(activeCases, bitacora), [24, 16, 22, 22, 24, 70, 22]);
+  downloadWorkbook(workbook, fileName);
 }
