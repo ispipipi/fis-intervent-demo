@@ -13,6 +13,7 @@ Se implementó una primera pasada de rediseño visual sobre el demo funcional de
 - Se centralizaron tokens visuales de color, tipografía, bordes, radios, sombras y movimiento en estilos premium separados.
 - Se normalizaron botones, campos, tablas, pestañas, estados, paneles, carga documental, modales y estados vacíos.
 - Se mejoraron los estados de foco y la lectura de la navegación mediante etiquetas y nombres accesibles.
+- El benchmark adapta sus indicadores a una cuadrícula responsive para evitar una columna excesivamente larga en pantallas estrechas.
 - Se mantuvo el acceso al Manual de usuario desde el shell, el dashboard, el pie de página y la pantalla de selección de rol.
 - Se verificaron visualmente dashboard, listado de casos, expediente, cálculo, cartas, nuevo caso, historial, benchmark, mantenedores y manual.
 

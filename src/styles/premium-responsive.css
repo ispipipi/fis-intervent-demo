@@ -218,6 +218,10 @@
     grid-template-columns: minmax(240px, 0.9fr) minmax(0, 1.2fr);
   }
 
+  .benchmark-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .coverage-card {
     grid-column: 1 / -1;
     min-height: 130px;
@@ -312,6 +316,7 @@
 
   .dashboard-overview,
   .dashboard-metrics,
+  .benchmark-metrics,
   .metrics-grid,
   .case-summary-grid,
   .history-metrics {

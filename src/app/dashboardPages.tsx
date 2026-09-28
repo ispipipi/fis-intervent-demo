@@ -456,7 +456,7 @@ export function BenchmarkPage() {
         </button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-5">
+      <div className="benchmark-metrics">
         <Metric title="Casos totales" value={totals.total} icon={<BarChart3 size={20} />} />
         <Metric title="Con docs pendientes" value={totals.pendingDocumentCases} icon={<FileText size={20} />} tone="warn" />
         <Metric title="Con alerta" value={totals.alerts} icon={<AlertTriangle size={20} />} tone="danger" />
