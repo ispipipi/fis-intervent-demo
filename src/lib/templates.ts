@@ -38,7 +38,7 @@ export type LetterTemplateDefinition = {
   build: (context: TemplateContext) => string;
 };
 
-type TemplateValues = {
+export type TemplateValues = {
   reference: string;
   csClaimNo: string;
   assured: string;
@@ -89,6 +89,16 @@ function extractMatches(text: string, pattern: RegExp) {
   return unique([...text.matchAll(pattern)].map((match) => match[1] || match[0]).map((value) => value.replace(/\s+/g, "")));
 }
 
+function extractBlNumbers(docs: Documento[]) {
+  const explicitNumber = /(?:B\/L|BL|Bill of Lading|Master Sea Waybill)\s*(?:No\.?|number|N°)\s*[:#]?\s*([A-Z0-9][A-Z0-9\/-]{5,})/gi;
+  const labelledNumber = /(?:B\/L|BL)\s*[:#]\s*([A-Z0-9][A-Z0-9\/-]{5,})/gi;
+  const candidates = docs.flatMap((doc) => {
+    const text = doc.textoExtraido || "";
+    return [...extractMatches(text, explicitNumber), ...extractMatches(text, labelledNumber)];
+  });
+  return unique(candidates).filter((value) => !["EXPEDIENTE", "PACKAGING", "CONDITION", "REFERENCE", "CARGO"].includes(value.toUpperCase()));
+}
+
 function documentCorpus(docs: Documento[]) {
   return docs
     .flatMap((doc) => [doc.textoExtraido, doc.originalName, doc.nombreArchivo])
@@ -104,10 +114,7 @@ function formatDate(value?: string) {
 
 function buildValues({ caso, docs, calculo }: TemplateContext): TemplateValues {
   const corpus = documentCorpus(docs);
-  const blNumbers = extractMatches(
-    corpus,
-    /(?:B\/L|BL|Bill of Lading|Master Sea Waybill)\s*(?:No\.?|number|N°)?\s*[:#]?\s*([A-Z0-9][A-Z0-9\/-]{5,})/gi
-  );
+  const blNumbers = extractBlNumbers(docs);
   const containers = extractMatches(corpus, /\b[A-Z]{4}\s?\d{6,7}(?:-\d)?\b/gi);
   const amount = calculo?.montoFinalReclamo ?? caso.claimAmount;
   const currencyCode = calculo?.moneda || "USD";
@@ -137,6 +144,10 @@ function buildValues({ caso, docs, calculo }: TemplateContext): TemplateValues {
     incidentDescription: pendingField(caso.resumenCaso || caso.causaPotencial || caso.causaDano),
     today: today()
   };
+}
+
+export function templateFieldValues(context: TemplateContext) {
+  return buildValues(context);
 }
 
 function today() {
@@ -432,12 +443,19 @@ export function templateHasPendingFields(content: string) {
   return /\[PENDIENTE COMPLETAR\]|\{\{[^{}]+\}\}/i.test(content);
 }
 
-export function templateLockedTokenIssues(content: string, lockedFields: string[] = []) {
-  return lockedFields.filter((token) => !content.includes(`{{${token}}}`));
+export function templateLockedTokenIssues(content: string, lockedFields: string[] = [], values?: TemplateValues) {
+  return lockedFields.filter((token) => {
+    const value = values?.[token as keyof TemplateValues];
+    return !value || value.includes("[PENDIENTE COMPLETAR]") || !content.includes(value);
+  });
 }
 
-export function templateRequiredTokenIssues(content: string, requiredFields: string[] = []) {
-  return requiredFields.filter((token) => !content.includes(`{{${token}}}`));
+export function templateRequiredTokenIssues(content: string, requiredFields: string[] = [], values?: TemplateValues) {
+  return requiredFields.filter((token) => {
+    if (content.includes(`{{${token}}}`)) return true;
+    const value = values?.[token as keyof TemplateValues];
+    return !value || (value.includes("[PENDIENTE COMPLETAR]") && content.includes("[PENDIENTE COMPLETAR]"));
+  });
 }
 
 export function templateMissingAttachments(docs: Documento[], requiredAttachments: string[] = []) {
@@ -480,10 +498,7 @@ export function buildLetterTemplate(id: LetterTemplateId, context: TemplateConte
 
 export function templateConflicts({ docs }: TemplateContext) {
   const corpus = documentCorpus(docs);
-  const blNumbers = extractMatches(
-    corpus,
-    /(?:B\/L|BL|Bill of Lading|Master Sea Waybill)\s*(?:No\.?|number|N°)?\s*[:#]?\s*([A-Z0-9][A-Z0-9\/-]{5,})/gi
-  );
+  const blNumbers = extractBlNumbers(docs);
   const containers = extractMatches(corpus, /\b[A-Z]{4}\s?\d{6,7}(?:-\d)?\b/gi);
   return [
     blNumbers.length > 1 ? `Se detectaron varios BL: ${blNumbers.join(", ")}.` : "",

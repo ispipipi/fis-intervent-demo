@@ -1,0 +1,378 @@
+@media (max-width: 980px) {
+  .app-header-inner {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .role-indicator {
+    display: none;
+  }
+
+  .dashboard-grid,
+  .case-header,
+  .letters-workspace,
+  .inspection-workspace,
+  .template-maintainer-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .maintainer-method-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .template-maintainer-list {
+    position: static;
+  }
+
+  .dashboard-overview {
+    grid-template-columns: minmax(220px, 1fr) minmax(360px, 1.5fr);
+  }
+
+  .coverage-card {
+    min-height: 180px;
+    grid-column: 1 / -1;
+    flex-direction: row;
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .coverage-card p {
+    margin-left: 0;
+  }
+
+  .case-actions {
+    max-width: 520px;
+  }
+}
+
+@media (max-width: 760px) {
+  .role-gate {
+    padding: 14px;
+  }
+
+  .role-gate-shell {
+    grid-template-columns: 1fr;
+    border-radius: 18px;
+  }
+
+  .role-gate-intro {
+    min-height: auto;
+    padding: 24px;
+  }
+
+  .role-gate-copy {
+    padding: 48px 0 42px;
+  }
+
+  .role-gate-access {
+    min-height: auto;
+    padding: 30px 24px 26px;
+  }
+
+  .app-header-inner,
+  .app-main,
+  .app-footer-inner {
+    width: min(calc(100% - 28px), 1440px);
+  }
+
+  .app-header-inner {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .app-nav {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: stretch;
+  }
+
+  .header-tools {
+    justify-self: end;
+  }
+
+  .role-select {
+    width: 142px;
+  }
+
+  .metrics-grid,
+  .case-summary-grid,
+  .history-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-welcome,
+  .coverage-card {
+    min-height: auto;
+  }
+
+  .coverage-card {
+    grid-column: auto;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .coverage-card p {
+    margin-right: auto;
+    margin-left: auto;
+  }
+
+  .template-preview-panel {
+    position: static;
+  }
+
+  .template-preview-sheet {
+    min-height: 640px;
+    padding: 24px 20px;
+  }
+
+  .template-approval-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .section-heading,
+  .dashboard-actions,
+  .toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .section-heading {
+    align-items: flex-start;
+  }
+
+  .maintainer-intro {
+    flex-direction: column;
+  }
+
+  .maintainer-actions {
+    width: 100%;
+  }
+
+  .maintainer-actions .button-primary,
+  .maintainer-actions .button-secondary {
+    flex: 1;
+  }
+
+  .dashboard-actions .button-primary,
+  .dashboard-actions .button-secondary,
+  .toolbar .input {
+    width: 100%;
+  }
+
+  .toolbar .search-box {
+    flex: 1 1 auto;
+  }
+
+  .history-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .history-scope-panel {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .history-scope-facts {
+    grid-column: 1 / -1;
+    padding: 14px 0 0 58px;
+    border-top: 1px solid var(--line-soft);
+    border-left: 0;
+  }
+
+  .history-detail {
+    position: static;
+  }
+
+  .history-category-filter {
+    width: 100%;
+  }
+
+  .maintainer-tabs {
+    width: 100%;
+  }
+
+  .maintainer-tab {
+    flex: 1;
+  }
+
+  .maintainer-actions {
+    flex-direction: column;
+  }
+
+  .maintainer-actions .button-primary,
+  .maintainer-actions .button-secondary {
+    width: 100%;
+  }
+
+  .manual-grid,
+  .checklist-grid,
+  .review-report-grid,
+  .review-report-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .review-report-intro {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .review-report-actions {
+    min-width: 0;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .review-report-actions .field-label {
+    grid-column: 1 / -1;
+  }
+
+  .review-report-actions .button-primary,
+  .review-report-actions .button-secondary {
+    width: 100%;
+  }
+
+  .review-report-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .data-table {
+    min-width: 760px;
+  }
+
+  .panel.overflow-hidden {
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 500px) {
+  .role-gate {
+    padding: 0;
+  }
+
+  .role-gate-shell {
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .role-gate-intro {
+    padding: 22px 20px 25px;
+  }
+
+  .company-brand-card {
+    min-height: 100px;
+    padding: 9px 10px 8px;
+  }
+
+  .company-brand-card img {
+    width: 128px;
+    height: 78px;
+  }
+
+  .role-gate-copy {
+    padding: 40px 0 34px;
+  }
+
+  .role-gate h1 {
+    font-size: 34px;
+  }
+
+  .role-gate-copy > p:last-child {
+    font-size: 13px;
+  }
+
+  .role-gate-access {
+    padding: 27px 20px 24px;
+  }
+
+  .access-heading h2 {
+    font-size: 25px;
+  }
+
+  .role-option {
+    min-height: 88px;
+    grid-template-columns: 20px 34px minmax(0, 1fr) 16px;
+    gap: 9px;
+    padding: 13px 11px;
+  }
+
+  .role-option-icon {
+    width: 34px;
+    height: 34px;
+  }
+
+  .role-option-copy span {
+    font-size: 10.5px;
+  }
+
+  .app-header {
+    padding-top: 8px;
+  }
+
+  .app-header-inner {
+    padding: 7px;
+    border-radius: 14px;
+  }
+
+  .brand-copy h1 {
+    display: none;
+  }
+
+  .role-select {
+    width: 128px;
+    font-size: 10px;
+  }
+
+  .app-nav .nav-link {
+    gap: 2px;
+    padding-right: 4px;
+    padding-left: 4px;
+    font-size: 10px;
+  }
+
+  .app-nav .nav-link svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .app-main {
+    padding-top: 22px;
+  }
+
+  .section-heading h2,
+  .case-header h2 {
+    font-size: 24px;
+  }
+
+  .metrics-grid,
+  .case-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .metric {
+    min-height: 116px;
+  }
+
+  .panel,
+  .case-header,
+  .card {
+    padding: 18px;
+  }
+
+  .app-footer-inner {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .final-claim {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .template-rules-grid {
+    grid-template-columns: 1fr;
+  }
+}

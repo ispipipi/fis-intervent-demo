@@ -29,16 +29,17 @@ export function buildReviewReport(
   const availableDocuments = checklistItems.filter((item) => isChecklistItemComplete(item)).map((item) => item.type);
   const contextualMissing = checklistItems.filter((item) => item.required && !isChecklistItemComplete(item)).map((item) => item.type);
   const transferRules = transferDocumentRules();
-  const blockingTransferDocuments = transferRules.filter((rule) => !isTransferDocumentRuleSatisfied(rule, documentos) && !rule.pendingAllowed);
-  const allowedPendingTransferDocuments = transferRules.filter((rule) => !isTransferDocumentRuleSatisfied(rule, documentos) && rule.pendingAllowed);
+  const blockingTransferDocuments = transferRules.filter((rule) => !isTransferDocumentRuleSatisfied(rule, documentos, caso) && !rule.pendingAllowed);
+  const allowedPendingTransferDocuments = transferRules.filter((rule) => !isTransferDocumentRuleSatisfied(rule, documentos, caso) && rule.pendingAllowed);
   const loaRule = transferRules.find((rule) => rule.id === "loa-subrogation");
   const aorRule = transferRules.find((rule) => rule.id === "aor");
   const lettersReady = Boolean(
-    loaRule && isTransferDocumentRuleSatisfied(loaRule, documentos) &&
-    aorRule && (isTransferDocumentRuleSatisfied(aorRule, documentos) || aorRule.pendingAllowed)
+    loaRule && isTransferDocumentRuleSatisfied(loaRule, documentos, caso) &&
+    aorRule && (isTransferDocumentRuleSatisfied(aorRule, documentos, caso) || aorRule.pendingAllowed)
   );
   const contextualMissingLabels = contextualMissing.map((type) => transferRules.find((rule) => rule.types.includes(type))?.label || type);
-  const missingDocuments = [...new Set([...contextualMissingLabels, ...blockingTransferDocuments.map((rule) => rule.label)])];
+  const blockingDocumentLabels = [...new Set([...contextualMissingLabels, ...blockingTransferDocuments.map((rule) => rule.label)])];
+  const missingDocuments = blockingDocumentLabels;
   const pendingActions: string[] = missingDocuments.map((type) => `Solicitar: ${type}`);
   const missingCaseFields = [
     ["Referencia FIS", caso.id],
@@ -56,7 +57,9 @@ export function buildReviewReport(
   const hasMinimumCaseData = missingCaseFields.length === 0 && Boolean(caso.claimHandler.trim() && caso.vessel.trim());
   const causeReviewed = transferCauseIsConfirmed(caso);
   const calculationReviewed = Boolean(
-    method && calculo?.montoFinalReclamo !== undefined && (calculo.justificacionSeleccion?.trim().length ?? 0) >= 10
+    method && calculo?.montoFinalReclamo !== undefined && (
+      calculo.ventaAFirme || (calculo.justificacionSeleccion?.trim().length ?? 0) >= 10
+    )
   );
   const prescriptionReady = Boolean(
     caso.dateOfDischarge &&
@@ -75,7 +78,7 @@ export function buildReviewReport(
     pendingActions.push(`Completar datos mínimos de traspaso: ${missingCaseFields.map(([label]) => label).join(", ") || "nave o handler"}.`);
   }
   if (!causeReviewed) {
-    pendingActions.push("Confirmar en Análisis una causa válida: Temperature, Delay, Market Loss, Mishanding, Roberry, Falla CT o Falla AC.");
+    pendingActions.push("Confirmar en Análisis una causa válida: Temperature, Delay, Market Loss, Mishandling, Robbery, Falla CT o Falla AC.");
   }
   if (!calculationReviewed) {
     pendingActions.push("Seleccionar, completar y justificar el cálculo aplicable en la pestaña Cálculo.");
@@ -100,19 +103,19 @@ export function buildReviewReport(
     {
       id: "documents",
       label: "Checklist documental",
-      status: blockingTransferDocuments.length === 0 ? "Cumplido" as const : "Pendiente" as const,
-      detail: blockingTransferDocuments.length === 0
+      status: blockingDocumentLabels.length === 0 ? "Cumplido" as const : "Pendiente" as const,
+      detail: blockingDocumentLabels.length === 0
         ? allowedPendingTransferDocuments.length > 0
           ? `Documentación mínima cumplida. Pendientes permitidos: ${allowedPendingTransferDocuments.map((rule) => rule.label).join(", ")}.`
           : "Documentación mínima de traspaso disponible."
-        : `Faltan documentos obligatorios: ${blockingTransferDocuments.map((rule) => rule.label).join(", ")}.`
+        : `Faltan documentos obligatorios: ${blockingDocumentLabels.join(", ")}.`
     },
     {
       id: "letters",
       label: "Cartas obligatorias",
       status: lettersReady ? "Cumplido" as const : "Pendiente" as const,
       detail: lettersReady
-        ? isTransferDocumentRuleSatisfied(aorRule!, documentos)
+        ? isTransferDocumentRuleSatisfied(aorRule!, documentos, caso)
           ? "LoA / subrogación y AoR disponibles."
           : "LoA / subrogación disponible. AoR pendiente permitido por FIS."
         : "Debe estar disponible la Carta de subrogación o LoA; el AoR puede quedar pendiente como excepción."
@@ -122,14 +125,18 @@ export function buildReviewReport(
       label: "Causa y mérito revisados",
       status: causeReviewed ? "Cumplido" as const : "Pendiente" as const,
       detail: causeReviewed
-        ? `Causa válida confirmada por ${caso.analisisCausa?.confirmadoPor}. El mérito bajo no bloquea el traspaso.`
+        ? `Causa válida confirmada por ${caso.analisisCausa?.confirmadoPor}. El mérito preliminar no está automatizado para esta causal y queda visible como pendiente de revisión.`
         : "La causa debe confirmarse desde la pestaña Análisis y corresponder a una causal contractual."
     },
     {
       id: "calculation",
       label: "Cálculo seleccionado y justificado",
       status: calculationReviewed ? "Cumplido" as const : "Pendiente" as const,
-      detail: calculationReviewed ? `${method} con monto final y justificación registrada.` : "Falta método, monto final o justificación suficiente."
+      detail: calculationReviewed
+        ? calculo?.ventaAFirme
+          ? `${method} con nota de crédito y monto final registrados.`
+          : `${method} con monto final y justificación registrada.`
+        : "Falta método, monto final o justificación suficiente."
     },
     {
       id: "prescription",
