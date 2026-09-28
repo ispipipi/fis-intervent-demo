@@ -115,6 +115,7 @@ import { AppShell, STATUS_LABELS, MASS_VESSEL_MIN_CASES, cx, useVisibleCases, ve
 
 export function DashboardPage() {
   const visibleCases = useVisibleCases();
+  const navigate = useNavigate();
   const {
     documentos,
     calculosPerdida,
@@ -168,6 +169,10 @@ export function DashboardPage() {
       )
     : 0;
   const exportTracking = () => exportCaseTrackingXlsx(filtered, documentos, calculosPerdida, bitacora, `seguimiento-preclaim-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  const casesMetricLink = (metric: string) => {
+    const handlerParam = handlerFilter !== "Todos" ? `&handler=${encodeURIComponent(handlerFilter)}` : "";
+    return `/casos?metric=${metric}${handlerParam}`;
+  };
 
   return (
     <AppShell>
@@ -212,10 +217,10 @@ export function DashboardPage() {
           </Link>
         </div>
         <div className="dashboard-metrics">
-          <Metric title="Total casos" value={filtered.length} icon={<BarChart3 size={20} />} />
-          <Metric title="Alertas activas" value={riskCount} icon={<AlertTriangle size={20} />} tone="danger" />
-          <Metric title="Sin movimiento" value={staleCount} icon={<CalendarClock size={20} />} tone="warn" />
-          <Metric title="Documentos cargados" value={documentos.filter((doc) => filtered.some((caso) => caso.id === doc.casoId)).length} icon={<FileText size={20} />} />
+          <Metric title="Total casos" value={filtered.length} icon={<BarChart3 size={20} />} onClick={() => navigate(casesMetricLink("all"))} buttonLabel="Ver todos los casos" />
+          <Metric title="Alertas activas" value={riskCount} icon={<AlertTriangle size={20} />} tone="danger" onClick={() => navigate(casesMetricLink("alerts"))} buttonLabel="Ver casos con alertas activas" />
+          <Metric title="Sin movimiento" value={staleCount} icon={<CalendarClock size={20} />} tone="warn" onClick={() => navigate(casesMetricLink("stale"))} buttonLabel="Ver casos sin movimiento" />
+          <Metric title="Documentos cargados" value={documentos.filter((doc) => filtered.some((caso) => caso.id === doc.casoId)).length} icon={<FileText size={20} />} onClick={() => navigate(casesMetricLink("documents-loaded"))} buttonLabel="Ver casos con documentos cargados" />
         </div>
         <div className="coverage-card">
           <div className="coverage-ring" aria-label={`Cobertura documental ${coverage}%`}>
@@ -361,14 +366,25 @@ export function DashboardPage() {
   );
 }
 
-export function Metric({ title, value, icon, tone = "ok" }: { title: string; value: number; icon: React.ReactNode; tone?: "ok" | "warn" | "danger" }) {
-  return (
-    <div className="metric">
+export function Metric({ title, value, icon, tone = "ok", onClick, buttonLabel }: {
+  title: string;
+  value: number;
+  icon: React.ReactNode;
+  tone?: "ok" | "warn" | "danger";
+  onClick?: () => void;
+  buttonLabel?: string;
+}) {
+  const content = (
+    <>
       <div className={cx("metric-icon", tone === "danger" && "bg-red-50 text-red-700", tone === "warn" && "bg-amber-50 text-amber-700")}>{icon}</div>
       <p>{title}</p>
       <strong>{value}</strong>
-    </div>
+    </>
   );
+  if (onClick) {
+    return <button className="metric metric-button" type="button" onClick={onClick} aria-label={buttonLabel || title}>{content}</button>;
+  }
+  return <div className="metric">{content}</div>;
 }
 
 export function Distribution({ label, value, total }: { label: string; value: number; total: number }) {
@@ -388,6 +404,7 @@ export function Distribution({ label, value, total }: { label: string; value: nu
 
 export function BenchmarkPage() {
   const visibleCases = useVisibleCases();
+  const navigate = useNavigate();
   const { documentos, calculosPerdida, bitacora, usuario } = useDemoStore();
   if (usuario.role === "Handler" || usuario.role === "Inspector") return <Navigate to="/dashboard" replace />;
 
@@ -457,11 +474,11 @@ export function BenchmarkPage() {
       </div>
 
       <div className="benchmark-metrics">
-        <Metric title="Casos totales" value={totals.total} icon={<BarChart3 size={20} />} />
-        <Metric title="Con docs pendientes" value={totals.pendingDocumentCases} icon={<FileText size={20} />} tone="warn" />
-        <Metric title="Con alerta" value={totals.alerts} icon={<AlertTriangle size={20} />} tone="danger" />
-        <Metric title="Sin movimiento" value={totals.stale} icon={<CalendarClock size={20} />} tone="warn" />
-        <Metric title="Cálculo completo" value={totals.completeCalculations} icon={<Check size={20} />} />
+        <Metric title="Casos totales" value={totals.total} icon={<BarChart3 size={20} />} onClick={() => navigate("/casos?metric=all")} buttonLabel="Ver todos los casos del benchmark" />
+        <Metric title="Con docs pendientes" value={totals.pendingDocumentCases} icon={<FileText size={20} />} tone="warn" onClick={() => navigate("/casos?metric=missing-docs")} buttonLabel="Ver casos con documentos pendientes" />
+        <Metric title="Con alerta" value={totals.alerts} icon={<AlertTriangle size={20} />} tone="danger" onClick={() => navigate("/casos?metric=alerts")} buttonLabel="Ver casos con alerta" />
+        <Metric title="Sin movimiento" value={totals.stale} icon={<CalendarClock size={20} />} tone="warn" onClick={() => navigate("/casos?metric=stale")} buttonLabel="Ver casos sin movimiento" />
+        <Metric title="Cálculo completo" value={totals.completeCalculations} icon={<Check size={20} />} onClick={() => navigate("/casos?metric=complete")} buttonLabel="Ver casos con cálculo completo" />
       </div>
 
       <section className="panel mt-6">

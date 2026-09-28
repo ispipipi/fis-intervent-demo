@@ -503,6 +503,8 @@ export function CaseDetailPage() {
           detail={caso.fechaPrescripcion ? `${caso.dateOfDischargeType === "ETA" ? "Estimación según ETA · vence" : "Vence"} ${new Date(caso.fechaPrescripcion).toLocaleDateString("es-CL")}` : "Fecha o regla de prescripción pendiente"}
           icon={<AlertTriangle size={19} />}
           tone={pres.tone === "danger" ? "danger" : pres.tone === "warn" ? "warn" : "ok"}
+          onClick={() => changeTab("historial")}
+          buttonLabel="Ver historial y riesgo de prescripción"
         />
         <CaseSummaryMetric
           label="Días sin movimiento"
@@ -510,6 +512,8 @@ export function CaseDetailPage() {
           detail={`Último movimiento ${new Date(lastMovement).toLocaleDateString("es-CL")}`}
           icon={<CalendarClock size={19} />}
           tone={inactivity.active ? "warn" : "ok"}
+          onClick={() => changeTab("historial")}
+          buttonLabel="Ver historial de movimientos"
         />
         <CaseSummaryMetric
           label="Recupero estimado"
@@ -517,6 +521,8 @@ export function CaseDetailPage() {
           detail={calculo?.metodoSeleccionado ? `Método ${calculo.metodoSeleccionado} seleccionado` : "Pendiente de cálculo"}
           icon={<BarChart3 size={19} />}
           tone="ok"
+          onClick={() => changeTab("calculo")}
+          buttonLabel="Ver cálculo de pérdida"
         />
       </div>
 

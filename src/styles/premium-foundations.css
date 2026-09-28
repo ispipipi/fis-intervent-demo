@@ -43,7 +43,7 @@ body {
 }
 
 body {
-  font-size: 13px;
+  font-size: 14px;
 }
 
 button,
@@ -115,8 +115,8 @@ textarea {
 }
 
 .app-main {
-  width: min(100% - 64px, 1440px);
-  max-width: 1440px;
+  width: min(calc(100% - 48px), 1680px);
+  max-width: 1680px !important;
   margin: 0 auto;
   padding: 32px 0 44px;
 }
@@ -414,15 +414,25 @@ textarea {
 .section-heading h3,
 .section-heading h2 {
   color: var(--ink);
-  font-size: 14px;
+  font-size: 17px;
   font-weight: 750;
   letter-spacing: -0.01em;
+}
+
+.section-heading h2,
+.section-heading h3 {
+  margin: 5px 0 0;
+  font-size: clamp(24px, 2.2vw, 32px);
+  font-weight: 780;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
 }
 
 .panel-title p,
 .panel-kicker,
 .section-subtitle {
   color: var(--muted);
+  font-size: 14px;
 }
 
 .eyebrow,
@@ -545,7 +555,22 @@ textarea {
   font-size: 26px;
   font-weight: 780;
 }
-
+.metric-button {
+  width: 100%;
+  appearance: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+.metric-button:hover {
+  border-color: var(--accent);
+  box-shadow: 0 8px 22px rgba(15, 119, 119, 0.12);
+  transform: translateY(-1px);
+}
+.metric-button:focus-visible {
+  outline: 3px solid rgba(15, 119, 119, 0.2);
+  outline-offset: 2px;
+}
 .coverage-card {
   min-height: 220px;
   border: 1px solid var(--line);
@@ -575,7 +600,7 @@ textarea {
   border-bottom: 1px solid var(--line);
   background: #f5f7f8;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 750;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -584,7 +609,7 @@ textarea {
 .data-table td {
   border-bottom: 1px solid var(--line-soft);
   color: var(--body);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .data-table tbody tr:last-child td {
@@ -603,7 +628,7 @@ textarea {
   border-radius: var(--radius-control);
   background: var(--field);
   color: var(--ink);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .input:focus,
@@ -616,10 +641,30 @@ textarea {
 
 .field > span {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 750;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.new-case-form {
+  width: 100%;
+}
+.case-summary-metric-button {
+  width: 100%;
+  appearance: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.case-summary-metric-button:hover {
+  border-color: var(--accent);
+  box-shadow: 0 8px 22px rgba(15, 119, 119, 0.12);
+  transform: translateY(-1px);
+}
+.case-summary-metric-button:focus-visible {
+  outline: 3px solid rgba(15, 119, 119, 0.2);
+  outline-offset: 2px;
 }
 
 .notice,

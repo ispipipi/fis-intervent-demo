@@ -119,24 +119,32 @@ export function CaseSummaryMetric({
   value,
   detail,
   icon,
-  tone
+  tone,
+  onClick,
+  buttonLabel
 }: {
   label: string;
   value: string;
   detail: string;
   icon: React.ReactNode;
   tone: "ok" | "warn" | "danger";
+  onClick?: () => void;
+  buttonLabel?: string;
 }) {
-  return (
-    <div className={cx("case-summary-metric", tone)}>
+  const content = (
+    <>
       <div className="case-summary-heading">
         <span>{label}</span>
         <div className="case-summary-icon">{icon}</div>
       </div>
       <strong>{value}</strong>
       <p>{detail}</p>
-    </div>
+    </>
   );
+  if (onClick) {
+    return <button className={cx("case-summary-metric", "case-summary-metric-button", tone)} type="button" onClick={onClick} aria-label={buttonLabel || label}>{content}</button>;
+  }
+  return <div className={cx("case-summary-metric", tone)}>{content}</div>;
 }
 
 export function ExtractionValue({ label, value }: { label: string; value?: string }) {

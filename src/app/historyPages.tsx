@@ -119,6 +119,17 @@ export function CasesPage() {
   const { documentos, calculosPerdida, bitacora, usuario } = useDemoStore();
   const location = useLocation();
   const vesselGroup = new URLSearchParams(location.search).get("group") || "";
+  const metricFilter = new URLSearchParams(location.search).get("metric") || "all";
+  const handlerFilter = new URLSearchParams(location.search).get("handler") || "Todos";
+  const metricLabels: Record<string, string> = {
+    all: "Todos los casos",
+    alerts: "Casos con alertas",
+    stale: "Casos sin movimiento",
+    "documents-loaded": "Casos con documentos cargados",
+    "missing-docs": "Casos con documentos pendientes",
+    complete: "Casos con cálculo completo"
+  };
+  const metricLabel = metricLabels[metricFilter];
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("Todos");
   const filtered = visibleCases.filter((caso) => {
@@ -136,7 +147,17 @@ export function CasesPage() {
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
-    return text.includes(query.toLowerCase()) && (status === "Todos" || caso.estado === status) && (!vesselGroup || vesselVoyageKey(caso) === vesselGroup);
+    const matchesMetric = metricFilter === "all"
+      || (metricFilter === "alerts" && (prescriptionStatus(caso).tone !== "ok" || inactivityAlert(caso, bitacora).active))
+      || (metricFilter === "stale" && inactivityAlert(caso, bitacora).active)
+      || (metricFilter === "documents-loaded" && caseDocs.length > 0)
+      || (metricFilter === "missing-docs" && missingRequiredDocumentTypes(caso, caseDocs, calculosPerdida.find((item) => item.casoId === caso.id)).length > 0)
+      || (metricFilter === "complete" && caso.estado === "Cálculo completo");
+    return text.includes(query.toLowerCase())
+      && matchesMetric
+      && (status === "Todos" || caso.estado === status)
+      && (handlerFilter === "Todos" || caso.claimHandler === handlerFilter)
+      && (!vesselGroup || vesselVoyageKey(caso) === vesselGroup);
   });
   return (
     <AppShell>
@@ -171,9 +192,12 @@ export function CasesPage() {
           <Download size={16} /> Exportar Excel
         </button>
       </div>
-      {vesselGroup && (
+      {(vesselGroup || metricFilter !== "all" || handlerFilter !== "Todos") && (
         <div className="notice mb-4" role="status">
-          Filtro activo: casos de la misma nave y viaje. <Link className="text-link" to="/casos">Quitar filtro</Link>
+          {metricLabel && metricFilter !== "all" && <>KPI activo: <strong>{metricLabel}</strong>. </>}
+          {handlerFilter !== "Todos" && <>Handler: <strong>{handlerFilter}</strong>. </>}
+          {vesselGroup && <>Filtro activo: casos de la misma nave y viaje. </>}
+          <Link className="text-link" to="/casos">Quitar filtros</Link>
         </div>
       )}
       <div className="panel overflow-hidden p-0">
@@ -226,6 +250,7 @@ export function HistoricalMemoryPage() {
   const [query, setQuery] = useState("");
   const [origin, setOrigin] = useState("Todos");
   const [category, setCategory] = useState("Todos");
+  const [quickFilter, setQuickFilter] = useState<"all" | "imported" | "generated" | "duplicates">("all");
   const [historyPage, setHistoryPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string>();
   const duplicateKeys = new Set(
@@ -283,7 +308,12 @@ export function HistoricalMemoryPage() {
       active?.resumenCaso,
       active?.causaPotencial
     ].join(" ").toLowerCase();
-    return haystack.includes(query.toLowerCase())
+    const matchesQuickFilter = quickFilter === "all"
+      || (quickFilter === "imported" && record.origin === "Importado")
+      || (quickFilter === "generated" && record.origin === "Generado en sistema")
+      || (quickFilter === "duplicates" && Boolean(record.historical && duplicateKeys.has(record.historical.referenceKey)));
+    return matchesQuickFilter
+      && haystack.includes(query.toLowerCase())
       && (origin === "Todos" || record.origin === origin)
       && (category === "Todos" || record.category === category);
   });
@@ -291,6 +321,26 @@ export function HistoricalMemoryPage() {
   const currentPage = Math.min(historyPage, pageCount);
   const pagedRecords = filtered.slice((currentPage - 1) * HISTORY_PAGE_SIZE, currentPage * HISTORY_PAGE_SIZE);
   const selected = unifiedRecords.find((record) => record.id === selectedId);
+  const scrollToHistoryDetail = () => {
+    window.setTimeout(() => document.getElementById("history-selected-detail")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  };
+  const selectHistoryRecord = (recordId?: string) => {
+    setSelectedId(recordId);
+    scrollToHistoryDetail();
+  };
+  const selectHistoryKpi = (filter: "all" | "imported" | "generated" | "duplicates") => {
+    setQuickFilter(filter);
+    setQuery("");
+    setOrigin("Todos");
+    setCategory("Todos");
+    setHistoryPage(1);
+    const target = unifiedRecords.find((record) => filter === "all"
+      || (filter === "imported" && record.origin === "Importado")
+      || (filter === "generated" && record.origin === "Generado en sistema")
+      || (filter === "duplicates" && Boolean(record.historical && duplicateKeys.has(record.historical.referenceKey))));
+    setSelectedId(target?.id);
+    scrollToHistoryDetail();
+  };
   return (
     <AppShell>
       <div className="section-heading">
@@ -319,10 +369,10 @@ export function HistoricalMemoryPage() {
       </section>
 
       <section className="history-metrics">
-        <Metric title="Registros visibles" value={unifiedRecords.length} icon={<History size={20} />} />
-        <Metric title="Importados" value={historico.length} icon={<FileText size={20} />} />
-        <Metric title="Generados en sistema" value={visibleActiveCases.length} icon={<ClipboardList size={20} />} />
-        <Metric title="Referencias repetidas" value={duplicateKeys.size} icon={<AlertTriangle size={20} />} tone={duplicateKeys.size > 0 ? "warn" : "ok"} />
+        <Metric title="Registros visibles" value={unifiedRecords.length} icon={<History size={20} />} onClick={() => selectHistoryKpi("all")} buttonLabel="Ver todos los registros" />
+        <Metric title="Importados" value={historico.length} icon={<FileText size={20} />} onClick={() => selectHistoryKpi("imported")} buttonLabel="Ver registros importados" />
+        <Metric title="Generados en sistema" value={visibleActiveCases.length} icon={<ClipboardList size={20} />} onClick={() => selectHistoryKpi("generated")} buttonLabel="Ver casos generados en el sistema" />
+        <Metric title="Referencias repetidas" value={duplicateKeys.size} icon={<AlertTriangle size={20} />} tone={duplicateKeys.size > 0 ? "warn" : "ok"} onClick={() => selectHistoryKpi("duplicates")} buttonLabel="Ver referencias repetidas" />
       </section>
 
       <p className="history-memory-note">
@@ -341,14 +391,14 @@ export function HistoricalMemoryPage() {
           <div className="toolbar history-toolbar">
             <div className="search-box">
               <Search size={18} />
-              <input value={query} onChange={(event) => { setQuery(event.target.value); setHistoryPage(1); setSelectedId(undefined); }} placeholder="Buscar referencia, cliente, nave..." />
+              <input value={query} onChange={(event) => { setQuery(event.target.value); setQuickFilter("all"); setHistoryPage(1); setSelectedId(undefined); }} placeholder="Buscar referencia, cliente, nave..." />
             </div>
-            <select className="input history-category-filter" value={origin} onChange={(event) => { setOrigin(event.target.value); setHistoryPage(1); setSelectedId(undefined); }}>
+            <select className="input history-category-filter" value={origin} onChange={(event) => { setOrigin(event.target.value); setQuickFilter("all"); setHistoryPage(1); setSelectedId(undefined); }}>
               <option>Todos</option>
               <option>Importado</option>
               <option>Generado en sistema</option>
             </select>
-            <select className="input history-category-filter" value={category} onChange={(event) => { setCategory(event.target.value); setHistoryPage(1); setSelectedId(undefined); }}>
+            <select className="input history-category-filter" value={category} onChange={(event) => { setCategory(event.target.value); setQuickFilter("all"); setHistoryPage(1); setSelectedId(undefined); }}>
               <option>Todos</option>
               {["Preclaim", "FIS", "Presentar", "Traspasado", "Descartado", "Datos incompletos", "Documentación pendiente", "Cálculo completo", "Traspasado a FIS", "Traspasado a Lawgistic"].map((item) => <option key={item}>{item}</option>)}
             </select>
@@ -375,7 +425,7 @@ export function HistoricalMemoryPage() {
                   {pagedRecords.map((record) => (
                     <tr key={record.id} className={cx("history-row", selectedId === record.id && "selected")}>
                       <td>
-                        <button type="button" className="history-record-button" onClick={() => setSelectedId(record.id)}>
+                        <button type="button" className="history-record-button" onClick={() => selectHistoryRecord(record.id)}>
                           <strong>{record.reference}</strong>
                           {record.historical && duplicateKeys.has(record.historical.referenceKey) && <span>Referencia repetida</span>}
                         </button>
@@ -434,10 +484,10 @@ type UnifiedHistoryRecord = {
 
 export function SystemCaseHistoryDetail({ caso, canOpen }: { caso?: Caso; canOpen: boolean }) {
   if (!caso) {
-    return <section className="panel history-detail"><EmptyState text="Selecciona un registro para consultar su detalle." /></section>;
+    return <section id="history-selected-detail" className="panel history-detail"><EmptyState text="Selecciona un registro para consultar su detalle." /></section>;
   }
   return (
-    <section className="panel history-detail">
+    <section id="history-selected-detail" className="panel history-detail">
       <div className="panel-title">
         <div>
           <p className="eyebrow">Generado en sistema</p>
@@ -474,10 +524,10 @@ export function SystemCaseHistoryDetail({ caso, canOpen }: { caso?: Caso; canOpe
 
 export function HistoricalRecordDetail({ record, duplicate }: { record?: HistoricalCase; duplicate: boolean }) {
   if (!record) {
-    return <section className="panel history-detail"><EmptyState text="Selecciona un registro para consultar su ficha original." /></section>;
+    return <section id="history-selected-detail" className="panel history-detail"><EmptyState text="Selecciona un registro para consultar su ficha original." /></section>;
   }
   return (
-    <section className="panel history-detail">
+    <section id="history-selected-detail" className="panel history-detail">
       <div className="panel-title">
         <div>
           <p className="eyebrow">Registro protegido</p>

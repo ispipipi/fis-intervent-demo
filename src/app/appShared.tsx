@@ -303,7 +303,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
 export function NavLink({ to, icon, label }: { to: string; icon: React.ReactNode; label: string }) {
   const location = useLocation();
-  const active = location.pathname === to || (to !== "/dashboard" && location.pathname.startsWith(`${to}/`));
+  const active = to === "/casos"
+    ? location.pathname === "/casos" || (location.pathname.startsWith("/casos/") && location.pathname !== "/casos/nuevo")
+    : location.pathname === to || (to !== "/dashboard" && location.pathname.startsWith(`${to}/`));
   return (
     <Link to={to} className={cx("nav-link", active && "active")}>
       {icon}

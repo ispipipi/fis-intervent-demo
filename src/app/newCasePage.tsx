@@ -234,7 +234,7 @@ export function NewCasePage() {
       <Link to="/casos" className="back-link">
         <ArrowLeft size={16} /> Volver a casos
       </Link>
-      <form className="panel mt-4" onSubmit={(event) => event.preventDefault()}>
+      <form className="panel new-case-form mt-4" onSubmit={(event) => event.preventDefault()}>
         <div className="section-heading">
           <div>
             <p className="eyebrow">Nuevo caso</p>
