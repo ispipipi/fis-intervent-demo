@@ -253,7 +253,7 @@ export function NewCasePage() {
     try {
       const files = await Promise.all(DEMO_FOLDER_DOCUMENTS.map(async (documentName) => {
         const fileName = `${DEMO_FOLDER_NAME}_${documentName}.pdf`;
-        const response = await fetch(`/demo/${DEMO_FOLDER_NAME}/${fileName}`);
+        const response = await fetch(`${import.meta.env.BASE_URL}demo/${DEMO_FOLDER_NAME}/${fileName}`);
         if (!response.ok) throw new Error(`No se pudo cargar ${fileName}`);
         const file = new File([await response.arrayBuffer()], fileName, { type: "application/pdf" });
         Object.defineProperty(file, "webkitRelativePath", { value: `${DEMO_FOLDER_NAME}/${fileName}` });
