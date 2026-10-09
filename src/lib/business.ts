@@ -75,9 +75,9 @@ function normalizeDocumentText(value: string) {
 }
 
 const DOCUMENT_ALIASES = [
-  { type: "Carta de notificación a la naviera", aliases: ["carta de notificacion", "notificacion", "notice", "carrier letter", "naviera"] },
+  { type: "Carta de notificación a la naviera", aliases: ["carta de notificacion", "claim notice", "notificacion", "notice", "carrier letter", "naviera"] },
   { type: "AoR", aliases: ["aor", "appointment", "authority"] },
-  { type: "Carta de subrogación o LoA", aliases: ["carta de subrogacion", "subrogacion", "subrogation", "loa", "letter of authority"] },
+  { type: "Carta de subrogación o LoA", aliases: ["carta de subrogacion", "subrogacion", "subro", "subrogation", "loa", "letter of authority"] },
   { type: "Carta de asignación de derechos", aliases: ["carta de asignacion de derechos", "asignacion de derechos", "assignment of rights", "rights assignment"] },
   { type: "BL", aliases: ["bl", "bill of lading", "b/l", "conocimiento"] },
   { type: "Booking", aliases: ["booking", "reserva"] },
@@ -89,13 +89,13 @@ const DOCUMENT_ALIASES = [
   { type: "Packing List", aliases: ["packing", "packing list", "lista empaque"] },
   { type: "Certificado fitosanitario", aliases: ["fitosanitario", "phytosanitary", "phyto"] },
   { type: "Certificado de origen", aliases: ["origen", "origin certificate"] },
-  { type: "Liquidaciones comparativas o informe de mercado", aliases: ["liquidaciones comparativas", "informe de mercado", "informe mercado", "market", "freshtech", "usda", "comparativa", "liquidacion comparativa"] },
+  { type: "Liquidaciones comparativas o informe de mercado", aliases: ["liquidaciones comparativas", "informe de mercado", "informe mercado", "market", "freshtech", "freshfruit", "usda", "smv", "shipping point", "comparativa", "liquidacion comparativa"] },
   { type: "Liquidación por contenedor", aliases: ["liquidacion por contenedor", "liquidacion contenedor", "container settlement", "settlement"] },
   { type: "Tracking (naviera)", aliases: ["tracking", "trace", "naviera tracking"] },
   { type: "Informes de QC en origen y destino", aliases: ["qc", "quality control", "origen destino"] },
-  { type: "Reportes de inspección", aliases: ["inspection", "survey", "reporte inspeccion", "inspeccion"] },
+  { type: "Reportes de inspección", aliases: ["inspection report", "preliminary report", "final report", "survey report", "inspection", "survey", "reporte inspeccion", "inspeccion"] },
   { type: "Certificado de cosecha", aliases: ["cosecha", "harvest"] },
-  { type: "Registros de termógrafos", aliases: ["termografo", "thermograph", "temperature", "temperatura", "logger"] },
+  { type: "Registros de termógrafos", aliases: ["termografo", "thermograph", "data logger", "datalogger", "temp recording", "temperature logger", "temperature", "temperatura", "logger", "trfile"] },
   { type: "Certificado de destrucción", aliases: ["certificado de destruccion", "destruction certificate"] },
   { type: "Factura de destrucción", aliases: ["factura de destruccion", "destruction invoice"] }
 ] as const;
@@ -138,6 +138,11 @@ function classifyNormalized(value: string, allowFuzzy: boolean) {
 }
 
 export function classifyDocument(fileName: string, content = ""): DocumentType {
+  const normalizedFileName = normalizeDocumentText(fileName);
+  if (/\bsin clasificar\b/.test(normalizedFileName)) return classifyNormalized(content, false);
+  if (/\b(liquidation|settlement)\b/.test(normalizedFileName) && !/\b(compar|market|mercado)\b/.test(normalizedFileName)) {
+    return "Liquidación por contenedor";
+  }
   const fromName = classifyNormalized(fileName, true);
   if (fromName !== "Sin clasificar") return fromName;
   return classifyNormalized(content, false);
@@ -212,7 +217,8 @@ export function calculatePrescription(
   if (!dateOfDischarge) return undefined;
   const rule = prescriptionRuleFor(jurisdiccion, modoTransporte);
   if (!rule) return undefined;
-  const base = new Date(`${dateOfDischarge}T00:00:00`);
+  const [year, month, day] = dateOfDischarge.split("-").map(Number);
+  const base = new Date(year, month - 1, day);
   if (Number.isNaN(base.getTime())) return undefined;
   if (rule.months) {
     const originalDay = base.getDate();
@@ -222,12 +228,22 @@ export function calculatePrescription(
     base.setDate(Math.min(originalDay, lastDayOfTargetMonth));
   }
   if (rule.years) base.setFullYear(base.getFullYear() + rule.years);
-  return base.toISOString().slice(0, 10);
+  return [base.getFullYear(), base.getMonth() + 1, base.getDate()]
+    .map((value, index) => index === 0 ? String(value) : String(value).padStart(2, "0"))
+    .join("-");
+}
+
+export function formatCalendarDate(value?: string): string {
+  if (!value) return "";
+  const [year, month, day] = value.slice(0, 10).split("-");
+  if (!year || !month || !day) return value;
+  return `${day}-${month}-${year}`;
 }
 
 export function daysBetween(fromIso: string, to = new Date()): number {
-  const from = new Date(`${fromIso.slice(0, 10)}T00:00:00`);
-  const target = new Date(to.toISOString().slice(0, 10) + "T00:00:00");
+  const [fromYear, fromMonth, fromDay] = fromIso.slice(0, 10).split("-").map(Number);
+  const from = new Date(fromYear, fromMonth - 1, fromDay);
+  const target = new Date(to.getFullYear(), to.getMonth(), to.getDate());
   return Math.ceil((from.getTime() - target.getTime()) / 86_400_000);
 }
 
@@ -422,9 +438,9 @@ export function referencePrescriptionMismatch(
   const prescriptionDate = calculatePrescription(dateOfDischarge, jurisdiccion, modoTransporte);
   if (!parts || !prescriptionDate) return undefined;
   const expectedMonth = prescriptionDate.slice(5, 7);
-  const expectedYear = prescriptionDate.slice(2, 4);
+  const expectedDay = prescriptionDate.slice(8, 10);
   const currentPeriod = parts.prescriptionYear ? `${parts.prescriptionMonth}/${parts.prescriptionYear}` : parts.prescriptionMonth;
-  const expectedPeriod = `${expectedMonth}/${expectedYear}`;
+  const expectedPeriod = `${expectedMonth}/${expectedDay}`;
   if (currentPeriod === expectedPeriod || (!parts.prescriptionYear && parts.prescriptionMonth === expectedMonth)) return undefined;
   return {
     currentPeriod,
@@ -437,7 +453,7 @@ export function buildCaseId(input: NewCaseInput, cases: Pick<Caso, "id">[], assi
   if (input.id?.trim()) return input.id.trim().toUpperCase();
   const opponent = resolveCarrierCode(input.opponent);
   const prescriptionDate = calculatePrescription(input.dateOfDischarge, input.jurisdiccion, input.modoTransporte);
-  const prescriptionPeriod = prescriptionDate ? `${prescriptionDate.slice(5, 7)}/${prescriptionDate.slice(2, 4)}` : "00/00";
+  const prescriptionPeriod = prescriptionDate ? `${prescriptionDate.slice(5, 7)}/${prescriptionDate.slice(8, 10)}` : "00/00";
   const clientPrefix = input.codigoCliente?.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
   const receivedAt = input.fechaRecepcion ? new Date(`${input.fechaRecepcion}T00:00:00`) : assignmentDate;
   const referenceYear = Number.isNaN(receivedAt.getTime()) ? assignmentDate.getFullYear() : receivedAt.getFullYear();
@@ -467,6 +483,9 @@ export function buildCasoFromInput(input: NewCaseInput, cases: Pick<Caso, "id">[
     modoTransporte: input.modoTransporte || "Marítimo",
     surveyor: input.surveyor,
     claimAmount: input.claimAmount,
+    temperaturaRegistrada: input.temperaturaRegistrada,
+    rangoMinimo: input.rangoMinimo,
+    rangoMaximo: input.rangoMaximo,
     jurisdiccion: input.jurisdiccion,
     fechaPrescripcion: calculatePrescription(input.dateOfDischarge, input.jurisdiccion, input.modoTransporte),
     causaDano: input.causaDano,

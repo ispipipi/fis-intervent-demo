@@ -70,6 +70,7 @@ import {
   documentChecklistCoverage,
   DOCUMENT_REQUIREMENT_LABELS,
   DOCUMENT_STATUS_LABELS,
+  formatCalendarDate,
   HANDLERS,
   hasRequiredMinimum,
   INSPECTORS,
@@ -112,7 +113,8 @@ import { HISTORICAL_BASELINE } from "../lib/historySeed";
 
 
 import { AppShell, Field, Modal, ReadonlyBanner, StatusPill, EmptyState, STATUS_LABELS, cx, downloadTextFile } from "./appShared";
-import { CaseSummaryMetric, DocumentsTab, AnalysisTab } from "./caseWork";
+import { CaseSummaryMetric, DocumentsTab } from "./caseWork";
+import { AnalysisTab } from "./analysisTab";
 import { CalculationTab, ReviewReportTab, ReviewReportContent, HistoryTab, InspectionTab } from "./calculationReviewPages";
 import { LettersTab } from "./lettersMaintainersPages";
 
@@ -121,7 +123,7 @@ export function CaseDetailPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const decodedId = decodeURIComponent(id || "");
-  const { casos, documentos, calculosPerdida, bitacora, usuario, generateReviewReport, transitionCase, revertCase, updateCaseDetails, assignInspector } = useDemoStore();
+  const { casos, documentos, calculosPerdida, bitacora, usuario, setUsuario, generateReviewReport, transitionCase, revertCase, updateCaseDetails, assignInspector } = useDemoStore();
   const caso = casos.find((item) => item.id === decodedId);
   const params = new URLSearchParams(location.search);
   const requestedTab = params.get("tab") || "documentos";
@@ -142,6 +144,7 @@ export function CaseDetailPage() {
   const [isEditingCase, setIsEditingCase] = useState(false);
   const [editReference, setEditReference] = useState("");
   const [editReferenceReason, setEditReferenceReason] = useState("");
+  const [editDateOfShipment, setEditDateOfShipment] = useState("");
   const [editDateOfDischarge, setEditDateOfDischarge] = useState("");
   const [editDateType, setEditDateType] = useState<DischargeDateType>("Real");
   const [editFechaRecepcion, setEditFechaRecepcion] = useState("");
@@ -169,7 +172,16 @@ export function CaseDetailPage() {
   if (usuario.role === "Handler" && caso.claimHandler !== usuario.nombre) {
     return (
       <AppShell>
-        <EmptyState text="Este caso está asignado a otro Handler y no está disponible para tu perfil." />
+        <div className="empty-state empty-state-action">
+          <p>Este caso está asignado a <strong>{caso.claimHandler}</strong> y no está disponible para el Handler actual.</p>
+          <button
+            type="button"
+            className="button-primary small"
+            onClick={() => setUsuario({ role: "Handler", nombre: caso.claimHandler })}
+          >
+            Continuar como {caso.claimHandler}
+          </button>
+        </div>
       </AppShell>
     );
   }
@@ -245,6 +257,7 @@ export function CaseDetailPage() {
   const beginCaseEdit = () => {
     setEditReference(caso.id);
     setEditReferenceReason("");
+    setEditDateOfShipment(caso.dateOfShipment || "");
     setEditDateOfDischarge(caso.dateOfDischarge || "");
     setEditDateType(caso.dateOfDischargeType || "Real");
     setEditFechaRecepcion(caso.fechaRecepcion || caso.createdAt.slice(0, 10));
@@ -285,12 +298,17 @@ export function CaseDetailPage() {
       setEditError("La fecha de recepción no puede ser futura.");
       return;
     }
+    if (editDateOfShipment && editDateOfShipment > today) {
+      setEditError("La fecha de embarque no puede ser futura.");
+      return;
+    }
     if (!editModoTransporte || (editModoTransporte === "Marítimo" && !editJurisdiccion)) {
       setEditError("Selecciona el modo de transporte y la jurisdicción marítima cuando corresponda.");
       return;
     }
     const result = updateCaseDetails(caso.id, {
       id: nextReference,
+      dateOfShipment: editDateOfShipment || undefined,
       dateOfDischarge: editDateOfDischarge || undefined,
       dateOfDischargeType: editDateOfDischarge ? editDateType : undefined,
       fechaRecepcion: editFechaRecepcion || undefined,
@@ -465,6 +483,10 @@ export function CaseDetailPage() {
               <input className="input" type="date" value={editFechaRecepcion} onChange={(event) => setEditFechaRecepcion(event.target.value)} />
               <small className="mt-1 block text-xs text-slate-500">El año de la referencia se basa en esta fecha.</small>
             </Field>
+            <Field label="Fecha de embarque">
+              <input className="input" type="date" value={editDateOfShipment} onChange={(event) => setEditDateOfShipment(event.target.value)} />
+              <small className="mt-1 block text-xs text-slate-500">Se utiliza para completar el expediente y las cartas.</small>
+            </Field>
             <Field label="Modo de transporte *">
               <select className="input" value={editModoTransporte} onChange={(event) => setEditModoTransporte(event.target.value as TransportMode)}>
                 <option value="Marítimo">Marítimo</option>
@@ -500,7 +522,7 @@ export function CaseDetailPage() {
         <CaseSummaryMetric
           label="Riesgo de prescripción"
           value={pres.label}
-          detail={caso.fechaPrescripcion ? `${caso.dateOfDischargeType === "ETA" ? "Estimación según ETA · vence" : "Vence"} ${new Date(caso.fechaPrescripcion).toLocaleDateString("es-CL")}` : "Fecha o regla de prescripción pendiente"}
+          detail={caso.fechaPrescripcion ? `${caso.dateOfDischargeType === "ETA" ? "Estimación según ETA · vence" : "Vence"} ${formatCalendarDate(caso.fechaPrescripcion)}` : "Fecha o regla de prescripción pendiente"}
           icon={<AlertTriangle size={19} />}
           tone={pres.tone === "danger" ? "danger" : pres.tone === "warn" ? "warn" : "ok"}
           onClick={() => changeTab("historial")}

@@ -208,7 +208,7 @@ export function vesselVoyageKey(caso: Caso) {
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { usuario, setUsuario, resetDemo } = useDemoStore();
+  const { usuario, setUsuario, resetTestRun } = useDemoStore();
   const navigate = useNavigate();
   if (!INSPECTOR_EVOLUTION_ENABLED && usuario.role === "Inspector") return <Navigate to="/" replace />;
   return (
@@ -275,12 +275,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <button
                 className="icon-button"
                 type="button"
-                title="Reiniciar datos demo"
-                aria-label="Reiniciar datos demo"
+                title="Reiniciar prueba"
+                aria-label="Reiniciar prueba"
                 onClick={() => {
-                  if (window.confirm("¿Reiniciar todos los datos de la demo? Se perderán los cambios y documentos cargados en esta sesión.")) {
-                    resetDemo();
-                    navigate("/dashboard");
+                  if (window.confirm("¿Reiniciar la prueba? Se limpiarán los casos activos, documentos y cálculos, pero se conservará la memoria histórica.")) {
+                    resetTestRun();
+                    navigate("/casos/nuevo");
                   }
                 }}
               >

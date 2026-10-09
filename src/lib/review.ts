@@ -125,7 +125,7 @@ export function buildReviewReport(
       label: "Causa y mérito revisados",
       status: causeReviewed ? "Cumplido" as const : "Pendiente" as const,
       detail: causeReviewed
-        ? `Causa válida confirmada por ${caso.analisisCausa?.confirmadoPor}. El mérito preliminar no está automatizado para esta causal y queda visible como pendiente de revisión.`
+        ? `Causa válida confirmada por ${caso.analisisCausa?.confirmadoPor}. Mérito preliminar registrado como recomendación para revisión humana: ${caso.analisisCausa?.meritoSugerido || "pendiente de recomendación"}.`
         : "La causa debe confirmarse desde la pestaña Análisis y corresponder a una causal contractual."
     },
     {

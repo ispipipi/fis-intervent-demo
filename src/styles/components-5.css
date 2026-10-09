@@ -77,13 +77,40 @@
     font-weight: 600;
   }
 
+  .timeline {
+    width: 100%;
+  }
+
   .timeline-event {
     position: relative;
-    display: grid;
-    grid-template-columns: 20px minmax(0, 1fr);
-    gap: 11px;
-    padding: 0 0 18px 10px;
+    display: block;
+    width: 100%;
+    min-width: 0;
+    padding: 0 0 18px 24px;
     border-left: 1px solid var(--line-strong);
+  }
+
+  .timeline-event-content {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .timeline-event-content p {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .timeline-event-content p:first-child {
+    color: var(--ink);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  .timeline-event-content p + p {
+    margin-top: 5px;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.4;
   }
 
   .timeline-event:last-child {

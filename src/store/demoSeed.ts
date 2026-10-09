@@ -132,6 +132,9 @@ const seedCases: Caso[] = [
     jurisdiccion: "LaHaya",
     fechaPrescripcion: calculatePrescription(dateOffset(-290), "LaHaya"),
     causaDano: "Temperatura",
+    temperaturaRegistrada: 4.6,
+    rangoMinimo: 0,
+    rangoMaximo: 2,
     estado: "Cálculo completo",
     ultimaActualizacion: daysAgo(1),
     createdAt: daysAgo(20)
@@ -176,8 +179,12 @@ const seedCalculations: CalculoPerdida[] = [
   calculateLoss({
     casoId: "PRE-FIS-MSC-2025-07-4042",
     moneda: "USD",
+    cantidadAfectada: 720,
+    unidadCalculo: "cartons",
+    metodo1_cantidadReferencia: 720,
     metodo1_liquidacionReal: 31800,
     metodo1_liquidacionComparativa: 45250,
+    metodo2_cantidadReferencia: 720,
     metodo2_valorReporteMercado: 42100,
     metodo2_liquidacionReal: 31800,
     metodo3_valorFactura: 44100,

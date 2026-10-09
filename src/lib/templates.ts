@@ -1,4 +1,4 @@
-import { CalculoPerdida, Caso, Documento, TemplateConfig, TemplateDownloadFormat, TemplateId } from "../types/domain";
+import { CalculoPerdida, Caso, Documento, DocumentType, TemplateConfig, TemplateDownloadFormat, TemplateId } from "../types/domain";
 import { currency, pendingField } from "./business";
 
 export type LetterTemplateId = TemplateId;
@@ -90,8 +90,8 @@ function extractMatches(text: string, pattern: RegExp) {
 }
 
 function extractBlNumbers(docs: Documento[]) {
-  const explicitNumber = /(?:B\/L|BL|Bill of Lading|Master Sea Waybill)\s*(?:No\.?|number|N°)\s*[:#]?\s*([A-Z0-9][A-Z0-9\/-]{5,})/gi;
-  const labelledNumber = /(?:B\/L|BL)\s*[:#]\s*([A-Z0-9][A-Z0-9\/-]{5,})/gi;
+  const explicitNumber = /(?:B\s*\/\s*L|BL|Bill of Lading|Master Sea Waybill)\s*(?:No\.?|number|N°)?\s*[:#.]?\s*([A-Z0-9][A-Z0-9\/-]{5,})/gi;
+  const labelledNumber = /(?:B\s*\/\s*L|BL)\s*[:#]\s*([A-Z0-9][A-Z0-9\/-]{5,})/gi;
   const candidates = docs.flatMap((doc) => {
     const text = doc.textoExtraido || "";
     return [...extractMatches(text, explicitNumber), ...extractMatches(text, labelledNumber)];
@@ -116,6 +116,9 @@ function buildValues({ caso, docs, calculo }: TemplateContext): TemplateValues {
   const corpus = documentCorpus(docs);
   const blNumbers = extractBlNumbers(docs);
   const containers = extractMatches(corpus, /\b[A-Z]{4}\s?\d{6,7}(?:-\d)?\b/gi);
+  const hasBlAttachment = docs.some((doc) => doc.disponible && doc.tipoDocumento === "BL");
+  const canonicalBl = caso.blNumber || blNumbers[0] || (hasBlAttachment ? "BL adjunto · número no informado" : undefined);
+  const canonicalContainers = caso.containers || containers.join(", ");
   const amount = calculo?.montoFinalReclamo ?? caso.claimAmount;
   const currencyCode = calculo?.moneda || "USD";
   const methodBreakdown = calculo?.ventaAFirme
@@ -130,8 +133,8 @@ function buildValues({ caso, docs, calculo }: TemplateContext): TemplateValues {
     opponent: pendingField(caso.opponent),
     vessel: pendingField(caso.vessel),
     voyage: pendingField(caso.voyage),
-    blNumber: pendingField(blNumbers[0]),
-    containers: pendingField(containers.join(", ")),
+    blNumber: pendingField(canonicalBl),
+    containers: pendingField(canonicalContainers),
     cargo: pendingField(caso.cargo),
     placeOfShipment: pendingField(caso.placeOfShipment),
     dateOfShipment: formatDate(caso.dateOfShipment),
@@ -345,8 +348,8 @@ export const LETTER_TEMPLATES: LetterTemplateDefinition[] = [
     id: "harvest",
     title: "Harvest Certificate",
     shortTitle: "Harvest",
-    description: "Certificado bilingüe de fecha de cosecha asociado al embarque.",
-    language: "Español / English",
+    description: "Certificado bilingüe de fecha de cosecha asociado al embarque. Cada bloque se presenta en español e inglés.",
+    language: "Bilingüe · Español / English",
     fields: ["CS Claim Number", "Broker Claim Number", "Especie / Goods", "Contenedor", "BL / CRT / AWB", "Fecha de cosecha", "Firma, timbre y fecha"],
     baseContent: harvestContent,
     active: true,
@@ -458,15 +461,25 @@ export function templateRequiredTokenIssues(content: string, requiredFields: str
   });
 }
 
-export function templateMissingAttachments(docs: Documento[], requiredAttachments: string[] = []) {
+export function templateMissingAttachments(docs: Documento[], requiredAttachments: string[] = [], caso?: Caso) {
   return requiredAttachments.filter((attachment) => {
+    if (caso?.documentStatuses?.[attachment as DocumentType] === "no aplica") return false;
     const matchingDocs = docs.filter((doc) => {
       const status = doc.estadoDocumental;
       const usable = !status || status === "disponible" || status === "recibido";
       return doc.disponible && usable && doc.tipoDocumento === attachment;
     });
     if (attachment === "Correspondencia de notificación") {
-      return !matchingDocs.some((doc) => /\.pdf$/i.test(doc.originalName || doc.nombreArchivo));
+      const correspondence = matchingDocs.length > 0
+        ? matchingDocs
+        : docs.filter((doc) => {
+            const source = `${doc.originalName || ""} ${doc.nombreArchivo}`.toLowerCase();
+            const status = doc.estadoDocumental;
+            const usable = !status || status === "disponible" || status === "recibido";
+            return doc.disponible && usable && doc.tipoDocumento === "Carta de notificación a la naviera"
+              && /claim\s*notice|notification|notificaci[oó]n|correspondence|joint\s*survey|carrier\s*letter/.test(source);
+          });
+      return !correspondence.some((doc) => /\.pdf$/i.test(doc.originalName || doc.nombreArchivo));
     }
     return matchingDocs.length === 0;
   });
@@ -496,13 +509,11 @@ export function buildLetterTemplate(id: LetterTemplateId, context: TemplateConte
   return getLetterTemplate(id, configs).build(context);
 }
 
-export function templateConflicts({ docs }: TemplateContext) {
-  const corpus = documentCorpus(docs);
+export function templateConflicts({ caso, docs }: TemplateContext) {
   const blNumbers = extractBlNumbers(docs);
-  const containers = extractMatches(corpus, /\b[A-Z]{4}\s?\d{6,7}(?:-\d)?\b/gi);
   return [
-    blNumbers.length > 1 ? `Se detectaron varios BL: ${blNumbers.join(", ")}.` : "",
-    containers.length > 1 ? `Se detectaron varios contenedores: ${containers.join(", ")}.` : ""
+    !docs.length ? "No hay documentos de respaldo para la carta." : "",
+    !caso.blNumber && blNumbers.length > 1 ? `Se detectaron varios BL: ${blNumbers.join(", ")}.` : ""
   ].filter(Boolean);
 }
 

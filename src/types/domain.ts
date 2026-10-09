@@ -164,6 +164,8 @@ export type Caso = {
   opponent: string;
   vessel: string;
   voyage?: string;
+  blNumber?: string;
+  containers?: string;
   cargo?: string;
   placeOfShipment?: string;
   dateOfShipment?: string;
@@ -182,6 +184,10 @@ export type Caso = {
   causaPotencial?: string;
   fuentesCausa?: string[];
   conflictosExtraccion?: string[];
+  /** Datos térmicos extraídos y aún pendientes de confirmación del handler. */
+  temperaturaRegistrada?: number;
+  rangoMinimo?: number;
+  rangoMaximo?: number;
   propuestaPerdida?: ExtractedLossProposal;
   informeRevision?: ReviewReport;
   traspasoExcepcional?: ExceptionalTransferAuthorization;
@@ -298,6 +304,13 @@ export type ExtractedCaseData = {
   dateOfDischarge?: string;
   surveyor?: string;
   claimAmount?: number;
+  cantidadAfectada?: number;
+  unidadCalculo?: string;
+  metodo1_cantidadReferencia?: number;
+  metodo2_cantidadReferencia?: number;
+  temperaturaRegistrada?: number;
+  rangoMinimo?: number;
+  rangoMaximo?: number;
   tipoCaso?: string;
   resumenCaso?: string;
   causaPotencial?: string;
@@ -455,6 +468,9 @@ export type NewCaseInput = {
   modoTransporte?: TransportMode;
   surveyor?: string;
   claimAmount?: number;
+  temperaturaRegistrada?: number;
+  rangoMinimo?: number;
+  rangoMaximo?: number;
   jurisdiccion?: Jurisdiccion;
   causaDano?: string;
   tipoCaso?: string;

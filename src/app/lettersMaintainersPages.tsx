@@ -1,4 +1,4 @@
-import { ChangeEvent, DragEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   AlertTriangle,
@@ -125,6 +125,7 @@ export function LettersTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnT
   const context = { caso, docs, calculo };
   const [copyState, setCopyState] = useState<"idle" | "success" | "error">("idle");
   const [approvalNotice, setApprovalNotice] = useState("");
+  const editorRef = useRef<HTMLTextAreaElement>(null);
   const templateVersion = templateConfigs.find((item) => item.id === template.id)?.version || 1;
   const pdfEnabled = template.downloadFormats?.includes("pdf") ?? true;
   const wordEnabled = template.downloadFormats?.includes("word") ?? false;
@@ -134,9 +135,11 @@ export function LettersTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnT
     (item) => item.templateId === template.id && item.version === templateVersion && item.fingerprint === fingerprint
   );
   const pendingFields = templateHasPendingFields(text);
+  const pendingLines = [...new Set(text.split(/\r?\n/).filter((line) => /\[PENDIENTE COMPLETAR\]/i.test(line)))];
+  const bilingualTemplate = /biling|español.*english|english.*español/i.test(template.language);
   const lockedFieldsMissing = templateLockedTokenIssues(text, template.lockedFields, fieldValues);
   const requiredFieldsMissing = templateRequiredTokenIssues(text, template.requiredFields, fieldValues);
-  const missingAttachments = templateMissingAttachments(docs, template.requiredAttachments);
+  const missingAttachments = templateMissingAttachments(docs, template.requiredAttachments, caso);
   const approved = Boolean(approval);
   const approvalBlockers = [
     ...conflicts,
@@ -165,6 +168,10 @@ export function LettersTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnT
     setText(event.target.value);
     setCopyState("idle");
     setApprovalNotice("");
+  };
+  const focusEditor = () => {
+    editorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    editorRef.current?.focus();
   };
   const approve = () => {
     if (!canApprove) {
@@ -232,6 +239,7 @@ export function LettersTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnT
           </select>
         </Field>
         <p className="template-description">{template.description}</p>
+        {bilingualTemplate && <p className="notice template-language-notice" role="note"><strong>Template bilingüe:</strong> esta carta debe contener y revisar sus bloques en español e inglés antes de aprobarla.</p>}
         {template.id === "claim-notice" && <p className="notice" role="note">Claim Notice y carta de notificación corresponden al mismo documento. Debe existir además la correspondencia de envío a la naviera en formato PDF, conservada en el expediente.</p>}
         {!template.active && <div className="notice template-inactive">Este template está inactivo en el mantenedor y no puede seleccionarse para nuevas generaciones.</div>}
         <div className="template-fields">
@@ -268,7 +276,15 @@ export function LettersTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnT
           </div>
           {canWrite && <button type="button" className="button-secondary small" onClick={resetTemplate}><RefreshCcw size={15} /> Restablecer base</button>}
         </div>
-        <textarea className="input template-editor" disabled={!canWrite} value={text} onChange={editText} />
+        {pendingFields && <div className="template-pending-guide" role="alert">
+          <div>
+            <strong>Completa los campos pendientes aquí</strong>
+            <span>Reemplaza <code>[PENDIENTE COMPLETAR]</code> directamente en la caja de contenido editable. Luego revisa la vista previa y vuelve a aprobar la carta.</span>
+            {pendingLines.length > 0 && <ul>{pendingLines.map((line) => <li key={line}>{line}</li>)}</ul>}
+          </div>
+          <button type="button" className="button-secondary small" onClick={focusEditor}>Ir al editor</button>
+        </div>}
+        <textarea ref={editorRef} className="input template-editor" disabled={!canWrite} value={text} onChange={editText} aria-label="Contenido editable de la carta" />
         {copyState === "error" && <p className="form-error mt-3">No fue posible copiar automáticamente. Selecciona el contenido y cópialo manualmente.</p>}
         {approvalNotice && <p className={cx("notice", "mt-3", approvalNotice.startsWith("Carta aprobada") ? "template-approval-notice" : "form-error")}>{approvalNotice}</p>}
         <div className="mt-4 flex flex-wrap justify-end gap-3">

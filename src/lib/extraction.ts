@@ -4,6 +4,7 @@ import { classifyDocument, documentClassificationConfidence } from "./business";
 import { CurrencyCode, DocumentType, ExtractedCaseData, ExtractedLossProposal, UploadDraft } from "../types/domain";
 
 const MAX_TEXT_LENGTH = 18_000;
+const DOCUMENT_PROCESSING_TIMEOUT_MS = 45_000;
 const REFERENCE_PATTERN = /PRE-FIS(?:\/[A-Z0-9]+)?-[A-Z0-9]{3}-\d{4}-\d{2}(?:\/\d{2})?-\d{4,}/gi;
 const CLAIM_PATTERN = /CS-\d{4}-\d{3,}/i;
 const INLINE_VALUE_BOUNDARIES = [
@@ -136,6 +137,92 @@ function extractAmount(value?: string) {
   return Number.isFinite(amount) ? amount : undefined;
 }
 
+const QUANTITY_UNITS = /cartons?|cajas?|boxes?|cases?|pallets?|palets?|kilograms?|kilogramos?|kg|units?|unidades?|pieces?|piezas?/i;
+
+function extractCount(value: string) {
+  const compact = value.replace(/\s/g, "");
+  if (/^\d{1,3}([.,]\d{3})+$/.test(compact)) return Number(compact.replace(/[.,]/g, ""));
+  const normalized = compact.replace(/,/g, ".");
+  const count = Number(normalized);
+  return Number.isFinite(count) ? count : undefined;
+}
+
+function normalizeQuantityUnit(value: string) {
+  const normalized = value.toLowerCase();
+  if (/carton|caja|box|case/.test(normalized)) return "cartons";
+  if (/pallet|palet/.test(normalized)) return "pallets";
+  if (/kilogram|kilogramo|\bkg\b/.test(normalized)) return "kg";
+  if (/unit|unidad|piece|pieza/.test(normalized)) return "units";
+  return value.toLowerCase();
+}
+
+function extractQuantityData(text: string): Pick<ExtractedCaseData, "cantidadAfectada" | "unidadCalculo"> {
+  const labeledPatterns = [
+    /(?:packages?|quantity|qty|cantidad|bultos?|total\s+packages?)\s*(?:no\.?|#)?\s*[:\-]?\s*(\d[\d\s.,]*)\s*(cartons?|cajas?|boxes?|cases?|pallets?|palets?|kilograms?|kilogramos?|kg|units?|unidades?|pieces?|piezas?)/i,
+    /(?:packages?|quantity|qty|cantidad|bultos?|total\s+packages?)\s*(?:no\.?|#)?\s*[:\-]?\s*(\d[\d\s.,]*)/i
+  ];
+  for (const pattern of labeledPatterns) {
+    const match = text.match(pattern);
+    const quantity = match?.[1] ? extractCount(match[1]) : undefined;
+    if (quantity !== undefined) {
+      const unit = match?.[2] ? normalizeQuantityUnit(match[2]) : undefined;
+      return { cantidadAfectada: quantity, unidadCalculo: unit };
+    }
+  }
+
+  const quantityWithUnit = text.match(new RegExp(`(\\d[\\d\\s.,]*)\\s*(${QUANTITY_UNITS.source})`, "i"));
+  const quantity = quantityWithUnit?.[1] ? extractCount(quantityWithUnit[1]) : undefined;
+  return quantity !== undefined
+    ? { cantidadAfectada: quantity, unidadCalculo: quantityWithUnit?.[2] ? normalizeQuantityUnit(quantityWithUnit[2]) : undefined }
+    : {};
+}
+
+function extractTemperatureNumber(value?: string) {
+  const match = value?.match(/-?\d+(?:[.,]\d+)?/);
+  if (!match) return undefined;
+  const normalized = match[0].replace(",", ".");
+  const number = Number(normalized);
+  return Number.isFinite(number) ? number : undefined;
+}
+
+function extractThermalData(text: string, type: DocumentType): Pick<ExtractedCaseData, "temperaturaRegistrada" | "rangoMinimo" | "rangoMaximo"> {
+  const lower = text.toLowerCase();
+  const hasThermalContext = type === "Registros de termógrafos"
+    || /term[oó]grafo|thermograph|data logger|temperature|temperatura|cold chain|set point|rango/.test(lower);
+  if (!hasThermalContext) return {};
+
+  const number = "(-?\\d+(?:[.,]\\d+)?)";
+  const rangePatterns = [
+    new RegExp(`(?:set\\s*point|temperature\\s*range|rango(?:\\s+de)?(?:\\s+temperatura)?|range|referencia)[^\\d-]{0,36}${number}\\s*°?\\s*C?\\s*(?:a|to|[-–])\\s*${number}\\s*°?\\s*C?`, "i"),
+    new RegExp(`${number}\\s*°?\\s*C\\s*(?:a|to|[-–])\\s*${number}\\s*°?\\s*C`, "i")
+  ];
+  const rangeMatch = rangePatterns.map((pattern) => text.match(pattern)).find(Boolean);
+  const rangoMinimo = extractTemperatureNumber(rangeMatch?.[1]);
+  const rangoMaximo = extractTemperatureNumber(rangeMatch?.[2]);
+
+  const observedPatterns = [
+    /(?:temperature\s+on\s+receipt|temperatura\s+(?:en\s+recepci[oó]n|registrada|observada)|observed\s+temperature|recorded\s+temperature)[^\d-]{0,40}(-?\d+(?:[.,]\d+)?)\s*°?\s*C\b/i,
+    /R-\d{3}[\s\S]{0,120}?(-?\d+(?:[.,]\d+)?)\s*°?\s*C\b/i
+  ];
+  const observedMatch = text.match(observedPatterns[0]);
+  const reviewReading = text
+    .split(/(?=R-\d{3}\b)/i)
+    .filter((segment) => /review\s+required/i.test(segment))
+    .map((segment) => segment.match(/(-?\d+(?:[.,]\d+)?)\s*°?\s*C\b/i)?.[1])
+    .find(Boolean);
+  const fallbackObservedMatch = text.match(observedPatterns[1]);
+  let temperaturaRegistrada = extractTemperatureNumber(observedMatch?.[1] || reviewReading || fallbackObservedMatch?.[1]);
+
+  if (temperaturaRegistrada === undefined) {
+    const candidates = [...text.matchAll(/(-?\d+(?:[.,]\d+)?)\s*°?\s*C\b/gi)]
+      .map((match) => extractTemperatureNumber(match[1]))
+      .filter((value): value is number => value !== undefined);
+    temperaturaRegistrada = candidates.find((value) => value !== rangoMinimo && value !== rangoMaximo);
+  }
+
+  return { temperaturaRegistrada, rangoMinimo, rangoMaximo };
+}
+
 function extractAmountsAfterLabel(text: string, label: string) {
   const start = text.toLowerCase().indexOf(label.toLowerCase());
   if (start < 0) return [];
@@ -227,7 +314,10 @@ const CONFLICT_FIELDS: Array<[keyof ExtractedCaseData, string]> = [
   ["placeOfDischarge", "Lugar de descarga"],
   ["dateOfDischarge", "Fecha de descarga"],
   ["surveyor", "Inspector"],
-  ["claimAmount", "Monto reclamado"]
+  ["claimAmount", "Monto reclamado"],
+  ["temperaturaRegistrada", "Temperatura registrada"],
+  ["rangoMinimo", "Rango mínimo"],
+  ["rangoMaximo", "Rango máximo"]
 ];
 
 function detectExtractionConflicts(data: ExtractedCaseData[]): string[] {
@@ -250,7 +340,7 @@ export function extractCaseData(text: string, fileName: string, type: DocumentTy
   const opponent = findLabelValue(normalizedText, ["Contraparte", "Transportista", "Carrier", "Opponent"]);
   const vesselAndVoyage = extractVesselAndVoyage(findLabelValue(normalizedText, ["Nave / viaje", "Vessel / voyage"]));
   const discharge = extractPlaceAndDate(findLabelValue(normalizedText, ["Descarga", "Port of discharge"]));
-  const shipment = extractPlaceAndDate(findLabelValue(normalizedText, ["Port of loading", "Origin", "Origen"]));
+  const shipment = extractPlaceAndDate(findLabelValue(normalizedText, ["Port of loading", "Vessel departure", "Loading date", "ETD", "Origin", "Origen"]));
   const cargo = findLabelValue(normalizedText, ["Tipo de carga", "Product", "Cargo", "Description"]);
   const cause = findLabelValue(normalizedText, ["Causa reportada", "Cause", "Causa"]);
   const amount = findLabelValue(normalizedText, ["Monto preliminar", "Claim amount", "Declared claim exposure", "Indicative final claim", "Indicative claim"]);
@@ -258,6 +348,8 @@ export function extractCaseData(text: string, fileName: string, type: DocumentTy
   const reference = references[0];
   const csClaimNo = normalizedText.match(CLAIM_PATTERN)?.[0];
   const detectedCause = detectCause(normalizedText, type) || cause;
+  const thermalData = extractThermalData(normalizedText, type);
+  const quantityData = extractQuantityData(normalizedText);
   const propuestaPerdida = extractLossProposal(normalizedText, type, fileName);
   const tipoCaso = detectedCause?.toLowerCase().includes("térmica") || type === "Registros de termógrafos"
     ? "Daño de temperatura"
@@ -286,6 +378,8 @@ export function extractCaseData(text: string, fileName: string, type: DocumentTy
     dateOfDischarge: discharge.date,
     surveyor,
     claimAmount: extractAmount(amount) ?? propuestaPerdida?.montoFinalReclamo,
+    ...quantityData,
+    ...thermalData,
     tipoCaso,
     resumenCaso: summaryParts.length ? `${summaryParts.join(" ")}.` : undefined,
     causaPotencial: detectedCause,
@@ -395,11 +489,27 @@ async function readContent(file: File) {
   return { text: "", ocrUsed: false };
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => reject(new Error("document-processing-timeout")), timeoutMs);
+    promise.then(
+      (value) => {
+        window.clearTimeout(timeoutId);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timeoutId);
+        reject(error);
+      }
+    );
+  });
+}
+
 async function processOneDocumentFile(file: File): Promise<UploadDraft> {
     const extension = file.name.split(".").pop()?.toLowerCase();
     const fallbackType = classifyDocument(file.name);
     try {
-      const content = await readContent(file);
+      const content = await withTimeout(readContent(file), DOCUMENT_PROCESSING_TIMEOUT_MS);
       const textoExtraido = content.text;
       const tipoDocumento = classifyDocument(file.name, textoExtraido);
       const datosExtraidos = extractCaseData(textoExtraido, file.name, tipoDocumento);
@@ -427,15 +537,21 @@ async function processOneDocumentFile(file: File): Promise<UploadDraft> {
     }
 }
 
-export async function processDocumentFiles(files: File[]): Promise<UploadDraft[]> {
+export async function processDocumentFiles(
+  files: File[],
+  onProgress?: (completed: number, total: number, currentFile: string) => void
+): Promise<UploadDraft[]> {
   const results: Array<UploadDraft | undefined> = new Array(files.length);
   let nextIndex = 0;
+  let completed = 0;
   const workerCount = Math.min(3, files.length);
   await Promise.all(Array.from({ length: workerCount }, async () => {
     while (nextIndex < files.length) {
       const index = nextIndex;
       nextIndex += 1;
       results[index] = await processOneDocumentFile(files[index]);
+      completed += 1;
+      onProgress?.(completed, files.length, files[index].name);
     }
   }));
   return results.filter((draft): draft is UploadDraft => Boolean(draft));
@@ -463,6 +579,11 @@ export function mergeExtractedData(drafts: UploadDraft[], fallbackReference: str
   const conflictosDetectados = detectExtractionConflicts(data);
   const sources = [...new Set(data.flatMap((item) => item.fuentesCausa || []))];
   const references = [...new Set(data.flatMap((item) => item.referenciasDetectadas || []))];
+  const thermalData = data
+    .filter((item) => item.temperaturaRegistrada !== undefined || item.rangoMinimo !== undefined || item.rangoMaximo !== undefined)
+    .sort((left, right) => (left.temperaturaRegistrada === undefined ? 1 : 0) - (right.temperaturaRegistrada === undefined ? 1 : 0));
+  const firstThermal = <K extends "temperaturaRegistrada" | "rangoMinimo" | "rangoMaximo">(key: K) =>
+    thermalData.map((item) => item[key]).find((value) => value !== undefined);
   const prioritized = data.find((item) => item.tipoCaso === "Daño de temperatura" || item.tipoCaso === "Daño de condición o manipulación") || data[0];
   const summaryParts = [
     assured && `El asegurado ${assured}`,
@@ -477,6 +598,13 @@ export function mergeExtractedData(drafts: UploadDraft[], fallbackReference: str
     .sort((left, right) => (left.tipoDocumento === "Liquidación por contenedor" ? -1 : 0) - (right.tipoDocumento === "Liquidación por contenedor" ? -1 : 0));
   const lossData = lossDrafts.map((draft) => draft.datosExtraidos?.propuestaPerdida).filter(Boolean) as ExtractedLossProposal[];
   const firstLoss = <K extends keyof ExtractedLossProposal>(key: K) => lossData.map((item) => item[key]).find((value) => value !== undefined) as ExtractedLossProposal[K] | undefined;
+  const quantityCandidates = data
+    .map((item) => item.cantidadAfectada)
+    .filter((value): value is number => value !== undefined && Number.isFinite(value) && value > 0);
+  const distinctQuantities = [...new Set(quantityCandidates)];
+  const extractedQuantity = first("cantidadAfectada");
+  const extractedUnit = first("unidadCalculo");
+  const consistentReferenceQuantity = distinctQuantities.length === 1 ? distinctQuantities[0] : undefined;
   const propuestaPerdida = lossData.length > 0
       ? {
           moneda: lossData[0].moneda,
@@ -484,12 +612,12 @@ export function mergeExtractedData(drafts: UploadDraft[], fallbackReference: str
           tipoCambio: firstLoss("tipoCambio"),
           tipoCambioFecha: firstLoss("tipoCambioFecha"),
           tipoCambioFuente: firstLoss("tipoCambioFuente"),
-          cantidadAfectada: firstLoss("cantidadAfectada"),
-          unidadCalculo: firstLoss("unidadCalculo"),
-          metodo1_cantidadReferencia: firstLoss("metodo1_cantidadReferencia"),
+          cantidadAfectada: firstLoss("cantidadAfectada") ?? extractedQuantity,
+          unidadCalculo: firstLoss("unidadCalculo") ?? extractedUnit,
+          metodo1_cantidadReferencia: firstLoss("metodo1_cantidadReferencia") ?? consistentReferenceQuantity,
         metodo1_liquidacionReal: firstLoss("metodo1_liquidacionReal"),
         metodo1_liquidacionComparativa: firstLoss("metodo1_liquidacionComparativa"),
-        metodo2_cantidadReferencia: firstLoss("metodo2_cantidadReferencia"),
+        metodo2_cantidadReferencia: firstLoss("metodo2_cantidadReferencia") ?? consistentReferenceQuantity,
         metodo2_valorReporteMercado: firstLoss("metodo2_valorReporteMercado"),
         metodo2_liquidacionReal: firstLoss("metodo2_liquidacionReal"),
         metodo3_valorFactura: firstLoss("metodo3_valorFactura"),
@@ -514,6 +642,13 @@ export function mergeExtractedData(drafts: UploadDraft[], fallbackReference: str
     dateOfDischarge,
     surveyor: first("surveyor"),
     claimAmount: first("claimAmount"),
+    cantidadAfectada: extractedQuantity,
+    unidadCalculo: extractedUnit,
+    metodo1_cantidadReferencia: consistentReferenceQuantity,
+    metodo2_cantidadReferencia: consistentReferenceQuantity,
+    temperaturaRegistrada: firstThermal("temperaturaRegistrada"),
+    rangoMinimo: firstThermal("rangoMinimo"),
+    rangoMaximo: firstThermal("rangoMaximo"),
     tipoCaso: prioritized?.tipoCaso || first("tipoCaso"),
     resumenCaso: summary || first("resumenCaso"),
     causaPotencial: prioritized?.causaPotencial || first("causaPotencial"),

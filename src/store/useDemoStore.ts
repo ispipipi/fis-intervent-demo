@@ -34,7 +34,7 @@ export const useDemoStore = create<DemoState>()(
     }),
     {
       name: `${STORAGE_PREFIX}state`,
-      version: 13,
+      version: 22,
       migrate: migrateLegacyTransferLabels,
       partialize: (state) => ({
         usuario: state.usuario,

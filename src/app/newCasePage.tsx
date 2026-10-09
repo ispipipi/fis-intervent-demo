@@ -1,4 +1,4 @@
-import { ChangeEvent, DragEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   AlertTriangle,
@@ -70,6 +70,7 @@ import {
   documentChecklistCoverage,
   DOCUMENT_REQUIREMENT_LABELS,
   DOCUMENT_STATUS_LABELS,
+  formatCalendarDate,
   HANDLERS,
   hasRequiredMinimum,
   INSPECTORS,
@@ -112,11 +113,37 @@ import { HISTORICAL_BASELINE } from "../lib/historySeed";
 
 
 import { AppShell, Field, StatusPill, cx } from "./appShared";
-import { ExtractionValue, LossProposalSummary } from "./caseWork";
+import { LossProposalSummary } from "./caseWork";
 import { filesFromDrop } from "../lib/fileDrop";
 
+const DEMO_FOLDER_NAME = "PRE-FIS-HLC-2025-02-4031";
+const DEMO_FOLDER_DOCUMENTS = [
+  "AoR", "BL", "Booking", "Carta_de_notificacion_a_la_naviera", "Carta_de_subrogacion_o_LoA",
+  "Certificado_de_cosecha", "Certificado_de_origen", "Certificado_fitosanitario", "DUS",
+  "Factura_de_exportacion", "Informes_de_QC_en_origen_y_destino", "Liquidacion_por_contenedor",
+  "Liquidaciones_comparativas_o_informe_de_mercado", "Packing_List", "Registros_de_termografos",
+  "Reportes_de_inspeccion", "Tracking_naviera"
+];
+const DEMO_JURISDICTIONS: Record<string, Jurisdiccion> = {
+  "PRE-FIS-MSC-2025-07-4042": "LaHaya",
+  "PRE-FIS-HLC-2025-02-4031": "Hamburgo"
+};
+
+function suggestedDemoJurisdiction(reference?: string) {
+  return reference ? DEMO_JURISDICTIONS[reference.trim().toUpperCase()] : undefined;
+}
+
+function EditableExtractionValue({ label, value, onChange }: { label: string; value?: string; onChange: (value: string) => void }) {
+  return (
+    <label className="extraction-value extraction-editable">
+      <span>{label}</span>
+      <input className="input" value={value || ""} onChange={(event) => onChange(event.target.value)} aria-label={label} />
+    </label>
+  );
+}
+
 export function NewCasePage() {
-  const { usuario, casos, createCase, prepareUpload, confirmUpload } = useDemoStore();
+  const { usuario, casos, createCase, prepareUpload, confirmUpload, resetTestRun, setUsuario } = useDemoStore();
   const navigate = useNavigate();
   const [input, setInput] = useState<NewCaseInput>({
     claimHandler: usuario.nombre,
@@ -128,8 +155,12 @@ export function NewCasePage() {
   const [proposal, setProposal] = useState<ExtractedCaseData>();
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingProgress, setProcessingProgress] = useState({ completed: 0, total: 0, currentFile: "" });
   const [processingError, setProcessingError] = useState("");
   const [error, setError] = useState("");
+  const errorRef = useRef<HTMLDivElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const filesInputRef = useRef<HTMLInputElement>(null);
   const hasData = Object.entries(input).some(([key, value]) =>
     !["claimHandler", "dateOfDischargeType", "fechaRecepcion", "modoTransporte"].includes(key) && Boolean(value)
   );
@@ -139,9 +170,18 @@ export function NewCasePage() {
   const referenceMismatch = referencePrescriptionMismatch(input.id, input.dateOfDischarge, input.jurisdiccion, input.modoTransporte);
   const calculatedPrescription = calculatePrescription(input.dateOfDischarge, input.jurisdiccion, input.modoTransporte);
   const prescriptionRule = prescriptionRuleFor(input.jurisdiccion, input.modoTransporte);
+
+  useEffect(() => {
+    if (error) {
+      errorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      errorRef.current?.focus();
+    }
+  }, [error]);
+
   if (usuario.role !== "Handler") return <Navigate to="/casos" replace />;
 
   const update = (key: keyof NewCaseInput, value: string) => {
+    setError("");
     setInput((current) => ({
       ...current,
       [key]: key === "claimAmount" ? (value ? Number(value) : undefined) : value || undefined
@@ -151,8 +191,11 @@ export function NewCasePage() {
     if (files.length === 0) return;
     setProcessingError("");
     setIsProcessing(true);
+    setProcessingProgress({ completed: 0, total: files.length, currentFile: "" });
     try {
-      const processed = await processDocumentFiles(Array.from(files));
+      const processed = await processDocumentFiles(Array.from(files), (completed, total, currentFile) => {
+        setProcessingProgress({ completed, total, currentFile });
+      });
       const extracted = mergeExtractedData(processed, input.id || "");
       setDrafts(processed);
       setProposal(extracted);
@@ -175,6 +218,10 @@ export function NewCasePage() {
         dateOfDischarge: current.dateOfDischarge || extracted.dateOfDischarge,
         surveyor: current.surveyor || extracted.surveyor,
         claimAmount: current.claimAmount ?? extracted.claimAmount,
+        temperaturaRegistrada: current.temperaturaRegistrada ?? extracted.temperaturaRegistrada,
+        rangoMinimo: current.rangoMinimo ?? extracted.rangoMinimo,
+        rangoMaximo: current.rangoMaximo ?? extracted.rangoMaximo,
+        jurisdiccion: current.jurisdiccion || suggestedDemoJurisdiction(current.id || extracted.referencia),
         tipoCaso: current.tipoCaso || extracted.tipoCaso,
         resumenCaso: current.resumenCaso || extracted.resumenCaso,
         causaPotencial: current.causaPotencial || extracted.causaPotencial,
@@ -195,10 +242,41 @@ export function NewCasePage() {
     event.currentTarget.value = "";
     if (files.length > 0) processFolder(files);
   };
+  const onDocumentsChange = onFolderChange;
   const onFolderDrop = async (event: DragEvent<HTMLLabelElement>) => {
     event.preventDefault();
     setIsDragging(false);
     await processFolder(await filesFromDrop(event.dataTransfer));
+  };
+  const loadDemoFolder = async () => {
+    setProcessingError("");
+    try {
+      const files = await Promise.all(DEMO_FOLDER_DOCUMENTS.map(async (documentName) => {
+        const fileName = `${DEMO_FOLDER_NAME}_${documentName}.pdf`;
+        const response = await fetch(`/demo/${DEMO_FOLDER_NAME}/${fileName}`);
+        if (!response.ok) throw new Error(`No se pudo cargar ${fileName}`);
+        const file = new File([await response.arrayBuffer()], fileName, { type: "application/pdf" });
+        Object.defineProperty(file, "webkitRelativePath", { value: `${DEMO_FOLDER_NAME}/${fileName}` });
+        return file;
+      }));
+      await processFolder(files);
+    } catch {
+      setProcessingError("No se pudo cargar la carpeta demo incluida en el repositorio.");
+    }
+  };
+  const resetTest = () => {
+    if (!window.confirm("¿Reiniciar esta prueba? Se limpiarán los casos activos, documentos y cálculos, pero se conservará la memoria histórica.")) return;
+    resetTestRun();
+    setDrafts([]);
+    setProposal(undefined);
+    setProcessingError("");
+    setError("");
+    setInput({
+      claimHandler: usuario.nombre,
+      dateOfDischargeType: "Real",
+      fechaRecepcion: new Date().toISOString().slice(0, 10),
+      modoTransporte: "Marítimo"
+    });
   };
   const validateDraft = () => {
     if (input.fechaRecepcion && input.fechaRecepcion > new Date().toISOString().slice(0, 10)) return "La fecha de recepción no puede ser futura.";
@@ -225,6 +303,9 @@ export function NewCasePage() {
       return;
     }
     const caso = createCase(input, complete);
+    if (complete && caso.claimHandler !== usuario.nombre) {
+      setUsuario({ role: "Handler", nombre: caso.claimHandler });
+    }
     if (drafts.length > 0) await confirmUpload(caso.id, drafts, { initialUpload: true });
     navigate(`/casos/${encodeURIComponent(caso.id)}?tab=documentos`);
   };
@@ -242,7 +323,6 @@ export function NewCasePage() {
           </div>
           <StatusPill label="Carpeta + extracción asistida" tone="ok" />
         </div>
-        {error && <div className="form-error">{error}</div>}
         <section className="new-case-intake">
           <div className="panel-title">
             <div>
@@ -254,7 +334,7 @@ export function NewCasePage() {
           <div className="notice mt-3" role="note">
             <strong>Fuente de entrada de Fase 1:</strong> carpeta documental ya descargada. Las conexiones directas a plataformas, API, correo o robots de descarga quedan fuera de este alcance y requieren una evolución aprobada.
           </div>
-          <label
+          <div
             className={cx("upload-box", isDragging && "dragging")}
             onDragOver={(event) => {
               event.preventDefault();
@@ -269,11 +349,42 @@ export function NewCasePage() {
             <FolderUp size={24} />
             <span>
               <strong>Arrastra una carpeta o documentos aquí</strong>
-              <small>También puedes seleccionar una carpeta completa</small>
+              <small>O selecciona una carpeta completa o varios documentos</small>
             </span>
-            <input type="file" multiple onChange={onFolderChange} {...({ webkitdirectory: "", directory: "" } as Record<string, string>)} />
-          </label>
-          {isProcessing && <p className="notice mt-3">Procesando documentos y preparando la propuesta...</p>}
+            <div className="upload-box-actions">
+              <button className="button-secondary small" type="button" onClick={() => folderInputRef.current?.click()} disabled={isProcessing}>
+                <FolderUp size={15} /> Seleccionar carpeta
+              </button>
+              <button className="button-secondary small" type="button" onClick={() => filesInputRef.current?.click()} disabled={isProcessing}>
+                <FileText size={15} /> Seleccionar documentos
+              </button>
+            </div>
+            <input ref={folderInputRef} type="file" multiple onChange={onFolderChange} {...({ webkitdirectory: "", directory: "" } as Record<string, string>)} />
+            <input
+              ref={filesInputRef}
+              type="file"
+              multiple
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.json,.xml,.md,.png,.jpg,.jpeg,.webp"
+              onChange={onDocumentsChange}
+            />
+          </div>
+          <div className="demo-upload-action">
+            <div className="demo-upload-buttons">
+              <button className="button-secondary small" type="button" onClick={() => void loadDemoFolder()} disabled={isProcessing}>
+                <FolderUp size={15} /> Cargar carpeta demo completa · 17 PDF
+              </button>
+              <button className="button-secondary small" type="button" onClick={resetTest} disabled={isProcessing}>
+                <RefreshCcw size={15} /> Reiniciar prueba
+              </button>
+            </div>
+            <small>Usa el expediente HLC incluido en el repositorio para una demostración reproducible.</small>
+          </div>
+          {isProcessing && (
+            <p className="notice mt-3">
+              Procesando documentos y preparando la propuesta... {processingProgress.completed}/{processingProgress.total}
+              {processingProgress.currentFile ? ` · ${processingProgress.currentFile}` : ""}
+            </p>
+          )}
           {processingError && <div className="form-error mt-3">{processingError}</div>}
           {drafts.length > 0 && (
             <div className="intake-file-list">
@@ -298,20 +409,38 @@ export function NewCasePage() {
               <div className="panel-title">
                 <div>
                   <h3>Propuesta detectada para revisión humana</h3>
-                  <p>Los datos quedan editables y se guardan junto con la carpeta al continuar.</p>
+                  <p>Edita los campos detectados aquí y confirma con “Guardar y continuar”. Los cambios se guardan junto con la carpeta.</p>
                 </div>
                 <span>{proposal.referencia || "Referencia pendiente"}</span>
               </div>
               <div className="extraction-grid">
-                <ExtractionValue label="Asegurado" value={input.assured} />
-                <ExtractionValue label="Consignatario" value={input.consignee} />
-                <ExtractionValue label="Transportista / oponente" value={input.opponent} />
-                <ExtractionValue label="Nave / viaje" value={[input.vessel, input.voyage].filter(Boolean).join(" / ")} />
-                <ExtractionValue label="Carga" value={input.cargo} />
-                <ExtractionValue label="Embarque" value={[input.placeOfShipment, input.dateOfShipment].filter(Boolean).join(" · ")} />
-                <ExtractionValue label="Descarga" value={[input.placeOfDischarge, input.dateOfDischarge].filter(Boolean).join(" · ")} />
-                <ExtractionValue label="Inspector" value={input.surveyor} />
-                <ExtractionValue label="CS Claim No" value={input.csClaimNo} />
+                <EditableExtractionValue label="Asegurado" value={input.assured} onChange={(value) => update("assured", value)} />
+                <EditableExtractionValue label="Consignatario" value={input.consignee} onChange={(value) => update("consignee", value)} />
+                <EditableExtractionValue label="Transportista / oponente" value={input.opponent} onChange={(value) => update("opponent", value)} />
+                <div className="extraction-value extraction-editable">
+                  <span>Nave / viaje</span>
+                  <div className="extraction-editable-pair">
+                    <input className="input" value={input.vessel || ""} onChange={(event) => update("vessel", event.target.value)} placeholder="Nave" aria-label="Nave detectada" />
+                    <input className="input" value={input.voyage || ""} onChange={(event) => update("voyage", event.target.value)} placeholder="Viaje" aria-label="Viaje detectado" />
+                  </div>
+                </div>
+                <EditableExtractionValue label="Carga" value={input.cargo} onChange={(value) => update("cargo", value)} />
+                <div className="extraction-value extraction-editable">
+                  <span>Embarque</span>
+                  <div className="extraction-editable-pair">
+                    <input className="input" value={input.placeOfShipment || ""} onChange={(event) => update("placeOfShipment", event.target.value)} placeholder="Lugar" aria-label="Lugar de embarque" />
+                    <input className="input" type="date" value={input.dateOfShipment || ""} onChange={(event) => update("dateOfShipment", event.target.value)} aria-label="Fecha de embarque" />
+                  </div>
+                </div>
+                <div className="extraction-value extraction-editable">
+                  <span>Descarga</span>
+                  <div className="extraction-editable-pair">
+                    <input className="input" value={input.placeOfDischarge || ""} onChange={(event) => update("placeOfDischarge", event.target.value)} placeholder="Lugar" aria-label="Lugar de descarga" />
+                    <input className="input" type="date" value={input.dateOfDischarge || ""} onChange={(event) => update("dateOfDischarge", event.target.value)} aria-label="Fecha de descarga" />
+                  </div>
+                </div>
+                <EditableExtractionValue label="Inspector" value={input.surveyor} onChange={(value) => update("surveyor", value)} />
+                <EditableExtractionValue label="CS Claim No" value={input.csClaimNo} onChange={(value) => update("csClaimNo", value)} />
               </div>
               {proposal.conflictosDetectados && proposal.conflictosDetectados.length > 0 && (
                 <div className="notice mt-3" role="alert">
@@ -330,12 +459,12 @@ export function NewCasePage() {
         )}
         {referenceMismatch && (
           <div className="notice mt-3" role="status">
-            Revisa la referencia: su período de prescripción es <strong>{referenceMismatch.currentPeriod}</strong>, pero con la fecha y jurisdicción actuales el vencimiento cae en <strong>{referenceMismatch.expectedPeriod}</strong> ({new Date(`${referenceMismatch.prescriptionDate}T00:00:00`).toLocaleDateString("es-CL")}). Puedes corregirla antes de guardar.
+            Revisa la referencia: su período de prescripción es <strong>{referenceMismatch.currentPeriod}</strong>, pero con la fecha y jurisdicción actuales el vencimiento cae en <strong>{referenceMismatch.expectedPeriod}</strong> ({formatCalendarDate(referenceMismatch.prescriptionDate)}). Puedes corregirla antes de guardar.
           </div>
         )}
         {calculatedPrescription && prescriptionRule && (
           <div className="notice mt-3" role="status">
-            {input.dateOfDischargeType === "ETA" ? "Prescripción estimada según ETA" : "Prescripción calculada desde la descarga"}: <strong>{new Date(`${calculatedPrescription}T00:00:00`).toLocaleDateString("es-CL")}</strong> · {prescriptionRule.scope}.
+            {input.dateOfDischargeType === "ETA" ? "Prescripción estimada según ETA" : "Prescripción calculada desde la descarga"}: <strong>{formatCalendarDate(calculatedPrescription)}</strong> · {prescriptionRule.scope}.
           </div>
         )}
         <div className="grid gap-4 md:grid-cols-3">
@@ -427,6 +556,7 @@ export function NewCasePage() {
           </div>
         )}
         <div className="mt-6 flex flex-wrap justify-end gap-3">
+          {error && <div ref={errorRef} className="form-error action-error" role="alert" tabIndex={-1}>{error}</div>}
           <button
             type="button"
             className="button-secondary"

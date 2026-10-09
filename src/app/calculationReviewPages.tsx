@@ -57,7 +57,7 @@ import {
 import { mergeExtractedData, processDocumentFiles } from "../lib/extraction";
 import { readDocumentFile } from "../lib/documentStorage";
 import { downloadLetterDocx, downloadLetterPdf } from "../lib/letterExport";
-import { buildReviewReportText } from "../lib/review";
+import { downloadReviewReportPdf } from "../lib/reviewExport";
 import { exportCaseTrackingXlsx, exportUnifiedHistoryXlsx } from "../lib/caseExport";
 import {
   canEditCalculation,
@@ -110,32 +110,16 @@ import {
 import { buildJointInspectionLetter } from "../lib/inspection";
 import { HISTORICAL_BASELINE } from "../lib/historySeed";
 
-import { AppShell, Field, EmptyState, ReadonlyBanner, StatusPill, cx, downloadTextFile, downloadHtmlFile, printHtmlFile } from "./appShared";
+import { AppShell, Field, EmptyState, ReadonlyBanner, StatusPill, cx, downloadHtmlFile, printHtmlFile } from "./appShared";
 import { LossProposalSummary } from "./caseWork";
 import { HistoricalValue } from "./historyPages";
 import { FinalClaim, MethodInputs, NumberField } from "./calculationFields";
+import { buildCalculationGuideSteps, CalculationGuide } from "./calculationGuide";
+import { applyLossProposal, createCalculationForm, normalizeLossProposalForCase } from "./calculationForm";
 
 export function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calculo?: CalculoPerdida; canWrite: boolean }) {
   const { saveCalculation, calculationMethods, documentos } = useDemoStore();
-  const [form, setForm] = useState<CalculoPerdida>(() => calculo
-    ? {
-        ...calculo,
-        moneda: calculo.moneda || "USD",
-        monedaOrigen: calculo.monedaOrigen || calculo.moneda || "USD",
-        tipoCambioFecha: calculo.tipoCambioFecha || caso.dateOfDischarge || new Date().toISOString().slice(0, 10),
-        tipoCambioFuente: calculo.tipoCambioFuente || "Xrate",
-        metodo3_ventaNetaDestino: calculo.metodo3_ventaNetaDestino ?? calculo.metodo3_ventaBrutaDestino
-      }
-    : {
-        casoId: caso.id,
-        moneda: "USD",
-        monedaOrigen: "USD",
-        tipoCambioFecha: caso.dateOfDischarge || new Date().toISOString().slice(0, 10),
-        tipoCambioFuente: "Xrate",
-        rubrosAdicionales: [],
-        ventaAFirme: false,
-        updatedAt: new Date().toISOString()
-      });
+  const [form, setForm] = useState<CalculoPerdida>(() => createCalculationForm(caso, calculo));
   const [error, setError] = useState("");
   const [saveNotice, setSaveNotice] = useState("");
   const computed = useMemo(() => calculateLoss(form), [form]);
@@ -153,6 +137,10 @@ export function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calcul
     event.preventDefault();
     const result = saveCalculation(computed);
     setError(result.ok ? "" : result.error || "No se pudo guardar.");
+    if (!result.ok) {
+      const targetId = /cantidad|unidad/i.test(result.error || "") ? "calculation-quantity-panel" : "calculation-final-panel";
+      window.setTimeout(() => document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
+    }
     setSaveNotice(result.ok
       ? computed.ventaAFirme
         ? "Cálculo guardado como venta a firme con nota de crédito."
@@ -162,24 +150,7 @@ export function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calcul
   const loadProposal = () => {
     if (!caso.propuestaPerdida || !canWrite) return;
     setForm((current) => ({
-      ...current,
-      moneda: caso.propuestaPerdida?.moneda || current.moneda,
-      monedaOrigen: caso.propuestaPerdida?.monedaOrigen || caso.propuestaPerdida?.moneda || current.monedaOrigen || current.moneda,
-      tipoCambio: caso.propuestaPerdida?.tipoCambio,
-      tipoCambioFecha: caso.propuestaPerdida?.tipoCambioFecha || current.tipoCambioFecha || caso.dateOfDischarge || new Date().toISOString().slice(0, 10),
-      tipoCambioFuente: caso.propuestaPerdida?.tipoCambioFuente || current.tipoCambioFuente || "Xrate",
-      metodo1_liquidacionReal: caso.propuestaPerdida?.metodo1_liquidacionReal,
-      metodo1_liquidacionComparativa: caso.propuestaPerdida?.metodo1_liquidacionComparativa,
-      metodo2_valorReporteMercado: caso.propuestaPerdida?.metodo2_valorReporteMercado,
-      metodo2_liquidacionReal: caso.propuestaPerdida?.metodo2_liquidacionReal,
-      metodo3_valorFactura: caso.propuestaPerdida?.metodo3_valorFactura,
-      metodo3_ventaNetaDestino: caso.propuestaPerdida?.metodo3_ventaNetaDestino ?? caso.propuestaPerdida?.metodo3_ventaBrutaDestino,
-      cantidadAfectada: caso.propuestaPerdida?.cantidadAfectada,
-      unidadCalculo: caso.propuestaPerdida?.unidadCalculo,
-      metodo1_cantidadReferencia: caso.propuestaPerdida?.metodo1_cantidadReferencia,
-      metodo2_cantidadReferencia: caso.propuestaPerdida?.metodo2_cantidadReferencia,
-      rubrosAdicionales: caso.propuestaPerdida?.rubrosAdicionales || [],
-      fuentes: caso.propuestaPerdida?.fuentes || [],
+      ...applyLossProposal(current, normalizeLossProposalForCase(caso, caso.propuestaPerdida)),
       metodoSeleccionado: undefined,
       justificacionSeleccion: ""
     }));
@@ -200,9 +171,24 @@ export function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calcul
   })
     .sort((a, b) => (b.result ?? -Infinity) - (a.result ?? -Infinity));
   const firmMethod = calculationMethods.find((method) => method.id === "firm");
+  const firmSaleAvailable = firmInvoiceAvailable && firmCreditNoteAvailable;
+  useEffect(() => {
+    if (form.ventaAFirme && !firmSaleAvailable) {
+      setForm((current) => ({
+        ...current,
+        ventaAFirme: false,
+        ventaAFirmeConfirmada: false,
+        notaCreditoValor: undefined
+      }));
+    }
+  }, [firmSaleAvailable, form.ventaAFirme]);
+  const selectedMethod = methods.find((method) => method.id === form.metodoSeleccionado);
+  const normalizedGuideSteps = buildCalculationGuideSteps({ form, caso, calculo, documentCount: documentos.length, methods });
+  const jumpTo = (targetId: string) => document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "start" });
   return (
     <form className="space-y-5" onSubmit={save}>
-      <div className="panel">
+      <CalculationGuide steps={normalizedGuideSteps} onJump={jumpTo} />
+      <div className="panel" id="calculation-data-panel">
         <div className="panel-title">
           <h3>Cálculo de pérdida</h3>
           <span>{canWrite ? "Editable" : "Solo lectura"}</span>
@@ -216,7 +202,7 @@ export function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calcul
           <p>{caso.analisisCausa?.conclusionFinal || "Sin conclusión confirmada todavía."}</p>
         </div>
         {caso.propuestaPerdida && (
-          <div className="calculation-proposal">
+          <div className="calculation-proposal" id="calculation-proposal">
             <div className="panel-title">
               <div>
                 <h3>Propuesta desde documentos</h3>
@@ -256,9 +242,10 @@ export function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calcul
             </select>
           </Field>
           <label className="checkbox-field">
-            <input type="checkbox" disabled={!canWrite || firmMethod?.active === false} checked={form.ventaAFirme} onChange={(event) => setForm((current) => ({ ...current, ventaAFirme: event.target.checked }))} />
+            <input type="checkbox" disabled={!canWrite || firmMethod?.active === false || !firmSaleAvailable} checked={form.ventaAFirme} onChange={(event) => setForm((current) => ({ ...current, ventaAFirme: event.target.checked }))} />
             {firmMethod?.title || "Venta a firme · nota de crédito"}
           </label>
+          {!firmSaleAvailable && <p className="field-hint">Disponible cuando el expediente tenga factura de exportación y nota de crédito reconocidas.</p>}
         </div>
         {form.monedaOrigen !== form.moneda && (
           <div className="mt-4">
@@ -280,12 +267,12 @@ export function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calcul
         {form.fuentes && form.fuentes.length > 0 && <p className="history-source-note">Valores cargados desde: {form.fuentes.join(", ")}</p>}
       </div>
 
-      <div className="panel">
+      <div className="panel" id="calculation-quantity-panel">
         <div className="panel-title">
           <h3>Unidad y cantidad de cálculo</h3>
           <span>Normalización opcional</span>
         </div>
-        <p className="notice mb-4">Cuando el embarque comparable o el reporte de mercado tiene un volumen distinto, indica la cantidad de referencia. El sistema llevará el valor unitario a la cantidad afectada antes de comparar.</p>
+        <p className="notice mb-4">{form.metodoSeleccionado === "1" || form.metodoSeleccionado === "2" ? `Para ${selectedMethod?.title || `Método ${form.metodoSeleccionado}`} debes completar cantidad afectada, unidad y cantidad de referencia.` : "Cuando el embarque comparable o el reporte de mercado tiene un volumen distinto, indica la cantidad de referencia. El sistema llevará el valor unitario a la cantidad afectada antes de comparar."}</p>
         <div className="grid gap-4 md:grid-cols-3">
           <NumberField label="Cantidad afectada" disabled={!canWrite} value={form.cantidadAfectada} onChange={(value) => updateNumber("cantidadAfectada", value)} />
           <Field label="Unidad de cálculo">
@@ -335,10 +322,10 @@ export function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calcul
               <NumberField label={`Venta neta destino (${form.monedaOrigen || form.moneda})`} disabled={!canWrite} value={form.metodo3_ventaNetaDestino} onChange={(value) => updateNumber("metodo3_ventaNetaDestino", value)} />
             </MethodInputs>
           </div>
-          <div className="panel">
+          <div className="panel" id="calculation-results-panel">
             <div className="panel-title">
               <h3>Resultados paralelos</h3>
-              <span>Ordenados de mayor a menor</span>
+              <span>{selectedMethod ? `Seleccionado: ${selectedMethod.title}` : "Selecciona una tarjeta para continuar"}</span>
             </div>
             <div className="grid gap-3 md:grid-cols-3">
               {methods.map((method) => (
@@ -347,11 +334,12 @@ export function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calcul
                   key={method.id}
                   disabled={!canWrite || !method.active || method.result === undefined}
                   className={cx("method-card", form.metodoSeleccionado === method.id && "selected")}
+                  aria-pressed={form.metodoSeleccionado === method.id}
                   onClick={() => setForm((current) => ({ ...current, metodoSeleccionado: method.id }))}
                 >
                   <span>{method.title}</span>
                   <strong>{currency(method.result, form.moneda)}</strong>
-                  <small>{!method.active ? "Inactivo en mantenedor" : method.result === undefined ? "Sin datos" : method.formula}</small>
+                  <small>{form.metodoSeleccionado === method.id ? "Seleccionado para guardar · " : "Seleccionar · "}{!method.active ? "Inactivo en mantenedor" : method.result === undefined ? "Sin datos" : method.formula}</small>
                 </button>
               ))}
             </div>
@@ -359,7 +347,7 @@ export function CalculationTab({ caso, calculo, canWrite }: { caso: Caso; calcul
         </>
       )}
 
-      <div className="panel">
+      <div className="panel" id="calculation-final-panel">
         <div className="panel-title">
           <h3>Regla contractual y justificación</h3>
         </div>
@@ -399,7 +387,7 @@ export function ReviewReportTab({
   const generate = () => generateReviewReport(caso.id, destination);
   const download = () => {
     if (!report) return;
-    downloadTextFile(`${caso.id}_informe_revision_${report.destination}.txt`, buildReviewReportText(report));
+    void downloadReviewReportPdf(`${caso.id}_informe_revision_${report.destination}.pdf`, report);
   };
   const exportCase = () => exportCaseTrackingXlsx([caso], docs, calculo ? [calculo] : [], bitacora, `${caso.id}_seguimiento.xlsx`);
 
@@ -428,7 +416,7 @@ export function ReviewReportTab({
           </button>
           {report && reportMatchesDestination && (
             <button className="button-secondary" type="button" onClick={download}>
-              <Download size={17} /> Descargar
+              <Download size={17} /> Descargar informe PDF
             </button>
           )}
           <button className="button-secondary" type="button" onClick={exportCase}>
@@ -585,7 +573,7 @@ export function HistoryTab({ events }: { events: ReturnType<typeof useDemoStore.
           {events.map((event) => (
             <div className="timeline-event" key={event.id}>
               <div className="timeline-dot" />
-              <div>
+              <div className="timeline-event-content">
                 <p className="font-semibold">{event.detalle}</p>
                 <p className="text-sm text-slate-500">
                   {new Date(event.timestamp).toLocaleString("es-CL")} · {event.usuario} · {eventLabels[event.tipoEvento] || event.tipoEvento}

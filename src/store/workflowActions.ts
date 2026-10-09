@@ -51,7 +51,7 @@ import { clearDocumentFiles, deleteDocumentFile, saveDocumentFile } from "../lib
 import { DemoState, StoreGet, StoreSet } from "./storeTypes";
 import { initialState, isTransferredCase } from "./demoSeed";
 import { canManageMaintainers, hasCaseWriteAccess } from "./authorization";
-export function createWorkflowActions(set: StoreSet, get: StoreGet): Pick<DemoState, "generateReviewReport" | "transitionCase" | "revertCase" | "registerLetter" | "approveLetter" | "assignInspector" | "saveInspection" | "updateCalculationMethod" | "resetCalculationMethods" | "updateTemplateConfig" | "resetTemplateConfigs" | "hydrateHistoricalCases" | "resetDemo"> {
+export function createWorkflowActions(set: StoreSet, get: StoreGet): Pick<DemoState, "generateReviewReport" | "transitionCase" | "revertCase" | "registerLetter" | "approveLetter" | "assignInspector" | "saveInspection" | "updateCalculationMethod" | "resetCalculationMethods" | "updateTemplateConfig" | "resetTemplateConfigs" | "hydrateHistoricalCases" | "resetTestRun" | "resetDemo"> {
   return {
       generateReviewReport: (casoId, destination) => {
         const state = get();
@@ -351,6 +351,18 @@ export function createWorkflowActions(set: StoreSet, get: StoreGet): Pick<DemoSt
         } finally {
           set({ historicoCargando: false });
         }
+      },
+      resetTestRun: () => {
+        const state = get();
+        set({
+          casos: [],
+          documentos: [],
+          calculosPerdida: [],
+          bitacora: [],
+          historico: state.historico,
+          ultimaImportacionHistorico: state.ultimaImportacionHistorico
+        });
+        void clearDocumentFiles().catch(() => undefined);
       },
       resetDemo: () => {
         set(initialState());

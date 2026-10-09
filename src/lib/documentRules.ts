@@ -73,6 +73,20 @@ export type DocumentChecklistItem = {
   documents: Documento[];
 };
 
+function notificationCorrespondenceFallback(documents: Documento[]) {
+  return documents.filter((documento) => {
+    if (!documento.disponible || documento.tipoDocumento !== "Carta de notificación a la naviera") return false;
+    const source = `${documento.originalName || ""} ${documento.nombreArchivo}`.toLowerCase();
+    return /claim\s*notice|notification|notificaci[oó]n|correspondence|joint\s*survey|carrier\s*letter/.test(source);
+  });
+}
+
+export function documentsForChecklistType(documents: Documento[], type: DocumentType) {
+  const direct = documents.filter((documento) => documento.tipoDocumento === type && documento.disponible);
+  if (type === "Correspondencia de notificación" && direct.length === 0) return notificationCorrespondenceFallback(documents);
+  return direct;
+}
+
 function isDestructionCase(caso: Caso) {
   const text = `${caso.tipoCaso || ""} ${caso.causaDano || ""} ${caso.resumenCaso || ""}`.toLowerCase();
   return /destrucci[oó]n|p[eé]rdida total|p[eé]rdida parcial/.test(text);
@@ -104,7 +118,7 @@ export function documentChecklist(caso: Caso, documentos: Documento[], calculo?:
   addRule("Factura de destrucción", "condicional", "Aplica cuando existe un costo de destrucción reclamable.", (currentCase) => isDestructionCase(currentCase));
 
   return DOCUMENT_TYPES.map((type) => {
-    const docs = documentos.filter((doc) => doc.tipoDocumento === type && doc.disponible);
+    const docs = documentsForChecklistType(documentos, type);
     const override = caso.documentStatuses?.[type];
     const documentStatus = docs.find((doc) => doc.estadoDocumental)?.estadoDocumental;
     const rule = rules.get(type);
@@ -181,6 +195,29 @@ export function transferDocumentRules(): TransferDocumentRule[] {
 }
 
 export function isTransferDocumentRuleSatisfied(rule: TransferDocumentRule, documentos: Documento[], caso?: Caso) {
+  if (rule.id === "notification-correspondence") {
+    return documentsForChecklistType(documentos, "Correspondencia de notificación").some((documento) => {
+      const status = caso?.documentStatuses?.["Correspondencia de notificación"] || documento.estadoDocumental;
+      return !status || isDocumentUsable(status);
+    });
+  }
+  if (rule.id === "export-invoice") {
+    if (caso?.documentStatuses?.["Factura de exportación"] === "no aplica") return true;
+    const directInvoice = documentos.some((documento) => {
+      if (!documento.disponible || documento.tipoDocumento !== "Factura de exportación") return false;
+      const status = caso?.documentStatuses?.["Factura de exportación"] || documento.estadoDocumental;
+      return !status || isDocumentUsable(status);
+    });
+    if (directInvoice) return true;
+    return documentos.some((documento) => {
+      const source = `${documento.originalName || ""} ${documento.nombreArchivo}`.toLowerCase();
+      const status = documento.estadoDocumental;
+      return documento.disponible && documento.tipoDocumento === "BL"
+        && /set\s*documental|commercial\s*invoice|invoice|factura/.test(source)
+        && (!status || isDocumentUsable(status));
+    });
+  }
+  if (rule.id === "packing-list" && caso?.documentStatuses?.["Packing List"] === "no aplica") return true;
   return documentos.some((documento) => {
     if (!rule.types.includes(documento.tipoDocumento) || !documento.disponible) return false;
     const status = caso?.documentStatuses?.[documento.tipoDocumento] || documento.estadoDocumental;

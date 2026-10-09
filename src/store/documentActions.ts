@@ -51,7 +51,7 @@ import { clearDocumentFiles, deleteDocumentFile, saveDocumentFile } from "../lib
 import { DemoState, StoreGet, StoreSet } from "./storeTypes";
 import { hasCaseWriteAccess } from "./authorization";
 
-export function createDocumentActions(set: StoreSet, get: StoreGet): Pick<DemoState, "confirmUpload" | "updateDocumentStatus" | "requestMissingDocuments" | "registerInactivityAlertSent" | "markInactivityAlertRead" | "resolveInactivityAlert" | "removeDocument" | "saveAnalysis"> {
+export function createDocumentActions(set: StoreSet, get: StoreGet): Pick<DemoState, "confirmUpload" | "updateDocumentType" | "updateDocumentStatus" | "requestMissingDocuments" | "registerInactivityAlertSent" | "markInactivityAlertRead" | "resolveInactivityAlert" | "removeDocument" | "saveAnalysis"> {
   return {
       confirmUpload: async (casoId, drafts, options) => {
         const state = get();
@@ -136,6 +136,47 @@ export function createDocumentActions(set: StoreSet, get: StoreGet): Pick<DemoSt
             ...state.bitacora
           ]
         }));
+      },
+      updateDocumentType: (documentId, type) => {
+        const state = get();
+        const document = state.documentos.find((item) => item.id === documentId);
+        if (!document) return { ok: false, error: "No se encontró el documento." };
+        if (!hasCaseWriteAccess(state, document.casoId)) return { ok: false, error: "Solo el Handler responsable puede corregir la clasificación." };
+        if (document.tipoDocumento === type) return { ok: true };
+        const oldType = document.tipoDocumento;
+        const caso = state.casos.find((item) => item.id === document.casoId);
+        if (!caso) return { ok: false, error: "No se encontró el caso asociado al documento." };
+        const nowIso = new Date().toISOString();
+        const nextStatuses = { ...(caso.documentStatuses || {}) };
+        if (!state.documentos.some((item) => item.id !== documentId && item.casoId === document.casoId && item.tipoDocumento === oldType && item.disponible)) {
+          delete nextStatuses[oldType];
+        }
+        nextStatuses[type] = document.estadoDocumental || "recibido";
+        set((current) => ({
+          casos: current.casos.map((item) => item.id === document.casoId
+            ? { ...item, documentStatuses: nextStatuses, informeRevision: undefined, ultimaActualizacion: nowIso }
+            : item),
+          documentos: current.documentos.map((item) => item.id === documentId
+            ? {
+                ...item,
+                tipoDocumento: type,
+                nombreArchivo: renamedFile(document.casoId, type, document.originalName || document.nombreArchivo),
+                clasificacionConfianza: "Media"
+              }
+            : item),
+          bitacora: [
+            {
+              id: crypto.randomUUID(),
+              casoId: document.casoId,
+              timestamp: nowIso,
+              tipoEvento: "caso_actualizado",
+              detalle: `Clasificación documental corregida: ${oldType} → ${type}.`,
+              usuario: current.usuario.nombre
+            },
+            ...current.bitacora
+          ]
+        }));
+        return { ok: true };
       },
       updateDocumentStatus: (casoId, type, status) => {
         const state = get();

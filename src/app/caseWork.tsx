@@ -1,4 +1,4 @@
-import { ChangeEvent, DragEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   AlertTriangle,
@@ -22,7 +22,6 @@ import {
   Plus,
   Pencil,
   RefreshCcw,
-  Save,
   Search,
   ShieldCheck,
   Settings,
@@ -34,7 +33,6 @@ import {
   CalculoPerdida,
   CaseStatus,
   Caso,
-  DamageAnalysis,
   DocumentType,
   DocumentStatus,
   Jurisdiccion,
@@ -201,8 +199,10 @@ export function LossProposalSummary({ proposal }: { proposal: ExtractedLossPropo
 }
 
 export function DocumentsTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<typeof useDemoStore.getState>["documentos"]; canWrite: boolean }) {
-  const { prepareUpload, confirmUpload, removeDocument, updateCase, updateDocumentStatus, requestMissingDocuments, calculosPerdida } = useDemoStore();
+  const { prepareUpload, confirmUpload, removeDocument, updateCase, updateDocumentType, updateDocumentStatus, requestMissingDocuments, calculosPerdida } = useDemoStore();
   const [drafts, setDrafts] = useState<UploadDraft[]>([]);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const filesInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingError, setProcessingError] = useState("");
@@ -341,6 +341,10 @@ export function DocumentsTab({ caso, docs, canWrite }: { caso: Caso; docs: Retur
     const result = updateDocumentStatus(caso.id, type, status);
     setDocumentStatusError(result.ok ? "" : result.error || "No fue posible actualizar el estado documental.");
   };
+  const changeDocumentType = (documentId: string, type: DocumentType) => {
+    const result = updateDocumentType(documentId, type);
+    setFileActionError(result.ok ? "" : result.error || "No fue posible corregir la clasificación.");
+  };
   return (
     <section className="grid gap-5 lg:grid-cols-[1fr_1.1fr]">
       <div className="panel">
@@ -351,7 +355,7 @@ export function DocumentsTab({ caso, docs, canWrite }: { caso: Caso; docs: Retur
         {!canWrite && <ReadonlyBanner />}
         {canWrite && (
           <>
-            <label
+            <div
               className={cx("upload-box", isDragging && "dragging")}
               onDragOver={onDragOver}
               onDragLeave={onDragLeave}
@@ -360,15 +364,25 @@ export function DocumentsTab({ caso, docs, canWrite }: { caso: Caso; docs: Retur
               <FolderUp size={24} />
               <span>
                 <strong>Arrastra una carpeta o documentos aquí</strong>
-                <small>También puedes seleccionar una carpeta completa</small>
+                <small>O selecciona una carpeta completa o varios documentos</small>
               </span>
+              <div className="upload-box-actions">
+                <button className="button-secondary small" type="button" onClick={() => folderInputRef.current?.click()} disabled={isProcessing}>
+                  <FolderUp size={15} /> Seleccionar carpeta
+                </button>
+                <button className="button-secondary small" type="button" onClick={() => filesInputRef.current?.click()} disabled={isProcessing}>
+                  <FileText size={15} /> Seleccionar documentos
+                </button>
+              </div>
+              <input ref={folderInputRef} type="file" multiple onChange={onFiles} {...({ webkitdirectory: "", directory: "" } as Record<string, string>)} />
               <input
+                ref={filesInputRef}
                 type="file"
                 multiple
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.json,.xml,.md,.png,.jpg,.jpeg,.webp"
                 onChange={onFiles}
-                {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
               />
-            </label>
+            </div>
             {isProcessing && <p className="notice mt-3">Procesando contenido documental y preparando propuesta de datos...</p>}
             {processingError && <div className="form-error mt-3">{processingError}</div>}
             {drafts.length > 0 && (
@@ -475,9 +489,23 @@ export function DocumentsTab({ caso, docs, canWrite }: { caso: Caso; docs: Retur
               <FileText size={17} />
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium">{doc.nombreArchivo}</p>
-                <p className="text-xs text-slate-500">
-                  {doc.tipoDocumento} · {doc.estadoExtraccion || (doc.ocrUsado ? "procesado con OCR" : "procesado")} · Confianza {doc.clasificacionConfianza || "Baja"} · {doc.fileStorageKey ? "respaldo guardado" : "metadata precargada del demo"}
-                </p>
+                {canWrite ? (
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <select
+                      className="input document-type-select"
+                      aria-label={`Tipo documental de ${doc.nombreArchivo}`}
+                      value={doc.tipoDocumento}
+                      onChange={(event) => changeDocumentType(doc.id, event.target.value as DocumentType)}
+                    >
+                      {DOCUMENT_TYPES.map((type) => <option key={type}>{type}</option>)}
+                    </select>
+                    <span className="text-xs text-slate-500">{doc.estadoExtraccion || (doc.ocrUsado ? "procesado con OCR" : "procesado")} · Confianza {doc.clasificacionConfianza || "Baja"} · {doc.fileStorageKey ? "respaldo guardado" : "metadata precargada del demo"}</span>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500">
+                    {doc.tipoDocumento} · {doc.estadoExtraccion || (doc.ocrUsado ? "procesado con OCR" : "procesado")} · Confianza {doc.clasificacionConfianza || "Baja"} · {doc.fileStorageKey ? "respaldo guardado" : "metadata precargada del demo"}
+                  </p>
+                )}
               </div>
               {doc.fileStorageKey && (
                 <div className="flex shrink-0 gap-1">
@@ -591,104 +619,5 @@ export function MissingDocsText({ caso, missing, canWrite, onRequest }: { caso: 
       {requestState === "error" && <p className="form-error mb-3">No fue posible actualizar la solicitud documental.</p>}
       <pre className="whitespace-pre-wrap text-sm text-slate-700">{text}</pre>
     </div>
-  );
-}
-
-export function AnalysisTab({ caso, docs, canWrite }: { caso: Caso; docs: ReturnType<typeof useDemoStore.getState>["documentos"]; canWrite: boolean }) {
-  const { saveAnalysis, usuario } = useDemoStore();
-  const thermographItem = documentChecklist(caso, docs).find((item) => item.type === "Registros de termógrafos");
-  const hasThermograph = Boolean(thermographItem && isChecklistItemComplete(thermographItem));
-  const applies = caso.causaDano?.toLowerCase().includes("temperatura") === true && hasThermograph;
-  const [registered, setRegistered] = useState(caso.analisisCausa?.temperaturaRegistrada?.toString() || "");
-  const [min, setMin] = useState(caso.analisisCausa?.rangoMinimo?.toString() || "");
-  const [max, setMax] = useState(caso.analisisCausa?.rangoMaximo?.toString() || "");
-  const [conclusion, setConclusion] = useState(caso.analisisCausa?.conclusionFinal || "");
-  const [saveError, setSaveError] = useState("");
-  const [saveNotice, setSaveNotice] = useState("");
-  const suggestion = applies && registered && min && max ? suggestDamageMerit(Number(registered), Number(min), Number(max)) : undefined;
-  const suggestedText = suggestion
-    ? `Desviación de ${Math.abs(suggestion.deviation).toFixed(1)}° sobre lo requerido — mérito sugerido: ${suggestion.meritoSugerido}.`
-    : "";
-  const save = () => {
-    setSaveError("");
-    setSaveNotice("");
-    if (conclusion.trim().length < 10) {
-      setSaveError("La conclusión debe tener al menos 10 caracteres.");
-      return;
-    }
-    const enteredTemperatureValues = [registered, min, max].filter((value) => value.trim() !== "");
-    if (applies && enteredTemperatureValues.length > 0 && enteredTemperatureValues.length < 3) {
-      setSaveError("Completa temperatura registrada, rango mínimo y rango máximo para calcular la sugerencia térmica.");
-      return;
-    }
-    if (applies && enteredTemperatureValues.length === 3) {
-      const values = [registered, min, max].map(Number);
-      if (values.some((value) => !Number.isFinite(value))) {
-        setSaveError("Los valores de temperatura deben ser numéricos.");
-        return;
-      }
-      if (values[1] > values[2]) {
-        setSaveError("El rango mínimo no puede ser mayor que el rango máximo.");
-        return;
-      }
-    }
-    const analysis: DamageAnalysis = {
-      temperaturaRegistrada: registered ? Number(registered) : undefined,
-      rangoMinimo: min ? Number(min) : undefined,
-      rangoMaximo: max ? Number(max) : undefined,
-      desviacion: suggestion?.deviation,
-      meritoSugerido: suggestion?.meritoSugerido,
-      conclusionFinal: conclusion.trim(),
-      confirmadoPor: usuario.nombre,
-      confirmadoAt: new Date().toISOString()
-    };
-    saveAnalysis(caso.id, analysis);
-    setSaveNotice("Análisis confirmado y registrado en la bitácora del caso.");
-  };
-  return (
-    <section className="panel">
-      <div className="panel-title">
-        <h3>Análisis de causa de daño</h3>
-        <span>Confirmación humana obligatoria</span>
-      </div>
-      {!canWrite && <ReadonlyBanner />}
-      {saveError && <div className="form-error mb-4" role="alert">{saveError}</div>}
-      {saveNotice && <div className="notice mb-4" role="status">{saveNotice}</div>}
-      {applies ? (
-        <div className="grid gap-4 md:grid-cols-3">
-          <Field label="Temperatura registrada">
-            <input className="input" disabled={!canWrite} type="number" value={registered} onChange={(event) => setRegistered(event.target.value)} />
-          </Field>
-          <Field label="Rango mínimo BL">
-            <input className="input" disabled={!canWrite} type="number" value={min} onChange={(event) => setMin(event.target.value)} />
-          </Field>
-          <Field label="Rango máximo BL">
-            <input className="input" disabled={!canWrite} type="number" value={max} onChange={(event) => setMax(event.target.value)} />
-          </Field>
-        </div>
-      ) : (
-        <div className="rounded-md border border-line bg-slate-50 p-4 text-sm text-slate-700">
-          No hay sugerencia asistida: solo se activa cuando la causa es "Temperatura" y existe un documento de registros de termógrafos.
-        </div>
-      )}
-      {suggestedText && (
-        <div className="mt-4 rounded-md border border-blue-200 bg-blue-50 p-4">
-          <p className="font-semibold text-blue-900">{suggestedText}</p>
-          {canWrite && (
-            <button className="button-secondary small mt-3" type="button" onClick={() => setConclusion(suggestedText)}>
-              Usar como base editable
-            </button>
-          )}
-        </div>
-      )}
-      <Field label="Conclusión final del handler">
-        <textarea className="input min-h-36" disabled={!canWrite} value={conclusion} onChange={(event) => setConclusion(event.target.value)} placeholder="El handler debe confirmar o escribir la conclusión final." />
-      </Field>
-      {canWrite && (
-        <button className="button-primary mt-4" type="button" disabled={conclusion.trim().length < 10} onClick={save}>
-          <Save size={17} /> Confirmar análisis
-        </button>
-      )}
-    </section>
   );
 }

@@ -42,11 +42,12 @@ export type DemoState = {
   updateCase: (casoId: string, patch: Partial<Caso>) => void;
   updateCaseDetails: (
     casoId: string,
-    patch: Partial<Pick<Caso, "id" | "dateOfDischarge" | "dateOfDischargeType" | "fechaRecepcion" | "modoTransporte" | "jurisdiccion">>,
+    patch: Partial<Pick<Caso, "id" | "dateOfShipment" | "dateOfDischarge" | "dateOfDischargeType" | "fechaRecepcion" | "modoTransporte" | "jurisdiccion">>,
     referenceChangeReason?: string
   ) => { ok: boolean; error?: string };
   prepareUpload: (files: FileList | File[]) => UploadDraft[];
   confirmUpload: (casoId: string, drafts: UploadDraft[], options?: { initialUpload?: boolean }) => Promise<void>;
+  updateDocumentType: (documentId: string, type: DocumentType) => { ok: boolean; error?: string };
   updateDocumentStatus: (casoId: string, type: DocumentType, status: DocumentStatus) => { ok: boolean; error?: string };
   requestMissingDocuments: (casoId: string, types: DocumentType[]) => { ok: boolean; error?: string };
   registerInactivityAlertSent: (casoId: string, channel: InactivityAlertChannel) => { ok: boolean; error?: string };
@@ -70,6 +71,7 @@ export type DemoState = {
   updateTemplateConfig: (id: TemplateId, patch: Partial<Omit<TemplateConfig, "id" | "updatedAt">>) => void;
   resetTemplateConfigs: () => void;
   hydrateHistoricalCases: () => Promise<void>;
+  resetTestRun: () => void;
   resetDemo: () => void;
 };
 

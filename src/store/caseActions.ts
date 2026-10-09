@@ -131,6 +131,7 @@ export function createCaseActions(set: StoreSet, get: StoreGet): Pick<DemoState,
         }
 
         const nextDate = patch.dateOfDischarge === undefined ? current.dateOfDischarge : patch.dateOfDischarge;
+        const nextShipmentDate = patch.dateOfShipment === undefined ? current.dateOfShipment : patch.dateOfShipment;
         const nextDateType: DischargeDateType | undefined =
           patch.dateOfDischargeType === undefined ? current.dateOfDischargeType : patch.dateOfDischargeType;
         const nextFechaRecepcion = patch.fechaRecepcion === undefined ? current.fechaRecepcion : patch.fechaRecepcion;
@@ -140,6 +141,7 @@ export function createCaseActions(set: StoreSet, get: StoreGet): Pick<DemoState,
         const nowIso = new Date().toISOString();
         const changedFields: string[] = [];
         if (nextId !== current.id) changedFields.push(`referencia ${current.id} → ${nextId}`);
+        if (nextShipmentDate !== current.dateOfShipment) changedFields.push(`fecha de embarque ${current.dateOfShipment || "sin fecha"} → ${nextShipmentDate || "sin fecha"}`);
         if (nextDate !== current.dateOfDischarge) changedFields.push(`fecha ${current.dateOfDischarge || "sin fecha"} → ${nextDate || "sin fecha"}`);
         if (nextDateType !== current.dateOfDischargeType) changedFields.push(`tipo de fecha ${current.dateOfDischargeType || "Real"} → ${nextDateType || "Real"}`);
         if (nextFechaRecepcion !== current.fechaRecepcion) changedFields.push(`fecha de recepción ${current.fechaRecepcion || "sin fecha"} → ${nextFechaRecepcion || "sin fecha"}`);
@@ -152,6 +154,7 @@ export function createCaseActions(set: StoreSet, get: StoreGet): Pick<DemoState,
               ? {
                   ...caso,
                   id: nextId,
+                  dateOfShipment: nextShipmentDate,
                   dateOfDischarge: nextDate,
                   dateOfDischargeType: nextDateType,
                   fechaRecepcion: nextFechaRecepcion,
